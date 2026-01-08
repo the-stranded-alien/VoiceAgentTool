@@ -14,7 +14,11 @@ class Settings(BaseSettings):
 
     #Retell API
     retell_api_key: str = ""
+    retell_agent_id: str = ""
     retell_webhook_secret_key: str = ""
+
+    # Server URL for webhooks
+    server_url: str = "http://localhost:8080"
 
     #LLM - Anthropic
     anthropic_api_key: str = ""

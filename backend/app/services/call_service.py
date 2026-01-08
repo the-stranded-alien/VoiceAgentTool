@@ -66,7 +66,7 @@ class CallService:
         call_update: CallUpdate
     ) -> Optional[CallResponse]:
         """Update a call record"""
-        data = call_update.model_dump(exclude_unset=True)
+        data = call_update.model_dump(exclude_unset=True, mode='json')
         response = self.supabase.table(self.table).update(data).eq("id", call_id).execute()
         if response.data:
             return CallResponse(**response.data[0])
