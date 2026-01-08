@@ -16,8 +16,13 @@ class Settings(BaseSettings):
     retell_api_key: str = ""
     retell_webhook_secret_key: str = ""
 
-    #LLM
+    #LLM - Anthropic
     anthropic_api_key: str = ""
+    llm_model: str = "claude-sonnet-4-20250514"
+    llm_max_tokens: int = 4096
+    llm_temperature: float = 0.1
+    
+    #LLM - OpenAI
     # openai_api_key: str = ""
 
     #Server
