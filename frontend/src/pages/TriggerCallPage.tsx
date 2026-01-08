@@ -165,7 +165,7 @@ export const TriggerCallPage: React.FC = () => {
             <Input
               type="tel"
               name="driver_phone"
-              value={formData.driver_phone}
+              value={formData.phone_number}
               onChange={handleChange}
               placeholder="+1234567890"
               required

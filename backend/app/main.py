@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.api import api_router
+from app.api.websocket import router as ws_router
 
 settings = get_settings()
 
@@ -21,7 +22,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount REST API routes
 app.include_router(api_router, prefix="/api/v1")
+
+# Mount WebSocket routes for Retell AI Custom LLM
+app.include_router(ws_router, prefix="/ws", tags=["websocket"])
 
 @app.get("/")
 async def read_root():
