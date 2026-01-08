@@ -55,6 +55,7 @@ class CallEventCreate(BaseModel):
 class TodayStatsResponse(BaseModel):
     total_calls: int
     successful_calls: int
-    emergency_calls: int
+    failed_calls: int
     in_progress_calls: int
-    avg_duration_minutes: float
+    avg_duration: Optional[float] = None
+    emergency_calls: Optional[int] = None

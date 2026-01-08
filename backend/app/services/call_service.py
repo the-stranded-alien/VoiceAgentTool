@@ -91,16 +91,18 @@ class CallService:
             return TodayStatsResponse(
                 total_calls=stats.get('total_calls', 0),
                 successful_calls=stats.get('successful_calls', 0),
-                emergency_calls=stats.get('emergency_calls', 0),
+                failed_calls=stats.get('failed_calls', 0),
                 in_progress_calls=stats.get('in_progress_calls', 0),
-                avg_duration_minutes=float(stats.get('avg_duration_minutes', 0.0) or 0.0)
+                avg_duration=float(stats.get('avg_duration_minutes', 0.0) or 0.0) if stats.get('avg_duration_minutes') else None,
+                emergency_calls=stats.get('emergency_calls', 0)
             )
         return TodayStatsResponse(
             total_calls=0,
             successful_calls=0,
-            emergency_calls=0,
+            failed_calls=0,
             in_progress_calls=0,
-            avg_duration_minutes=0.0
+            avg_duration=None,
+            emergency_calls=0
         )
     
     async def process_call_transcript(
