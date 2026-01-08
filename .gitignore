@@ -1,5 +1,10 @@
+*pyc
+__pycache__/
+
 #backend
 backend/.venv/
+backend/.env
+backend/app/__pycache__/
 
 #frontend
 frontend/logs
