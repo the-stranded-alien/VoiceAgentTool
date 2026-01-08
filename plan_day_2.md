@@ -1,5 +1,4 @@
 How to Test the Real-Time Voice Conversation System
-Great question! Here's a comprehensive testing guide for what we've built:
 
 1. Quick WebSocket Test (Already Passing ✅)
 We already verified the WebSocket works with the test script:
