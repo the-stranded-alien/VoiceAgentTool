@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from typing import List, Optional
 from app.database import get_supabase
+from app.services.llm.extractor import get_extractor
 from app.services.call_service import CallService
 from app.models.call import (
     CallCreate,
@@ -91,3 +92,28 @@ async def create_call_event(
         event_data=event_data
     )
     return await service.create_call_event(event)
+
+@router.post("/{call_id}/process-transcript")
+async def process_call_transcript(
+    call_id: str,
+    transcript: str,
+    scenario_type: str = "check_in",
+    service: CallService = Depends(get_call_service)
+):
+    """
+    Process a call transcript and extract structured data
+    
+    This endpoint is useful for testing or post-call processing
+    """
+    try:
+        result = await service.process_call_transcript(
+            call_id=call_id,
+            transcript=transcript,
+            scenario_type=scenario_type
+        )
+        return {
+            "success": True,
+            "structured_data": result
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

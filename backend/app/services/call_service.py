@@ -1,5 +1,6 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
+import logging
 from supabase import Client
 from app.models.call import (
     CallCreate,
@@ -9,12 +10,18 @@ from app.models.call import (
     CallEventCreate,
     TodayStatsResponse
 )
+from app.services.llm.extractor import get_extractor
+from app.services.llm.conversation import get_conversation_handler
+
+logger = logging.getLogger(__name__)
 
 class CallService:
     def __init__(self, supabase: Client):
         self.supabase = supabase
         self.table = "calls"
         self.events_table = "call_events"
+        self.extractor = get_extractor()
+        self.conversation = get_conversation_handler()
     
     async def create_call(self, call: CallCreate) -> CallResponse:
         """Create a new call record"""
@@ -95,3 +102,54 @@ class CallService:
             in_progress_calls=0,
             avg_duration_minutes=0.0
         )
+    
+    async def process_call_transcript(
+        self,
+        call_id: str,
+        transcript: str,
+        scenario_type: str
+    ) -> Dict[str, Any]:
+        """
+        Process transcript and extract structured data
+        
+        Args:
+            call_id: Call ID
+            transcript: Raw transcript
+            scenario_type: Type of scenario
+            
+        Returns:
+            Extracted structured data
+        """
+        try:
+            # Get call details
+            call = await self.get_call(call_id)
+            if not call:
+                raise ValueError(f"Call {call_id} not found")
+            
+            # Extract structured data
+            structured_data = await self.extractor.extract_from_transcript(
+                transcript=transcript,
+                scenario_type=scenario_type,
+                driver_name=call.driver_name,
+                load_number=call.load_number
+            )
+            
+            # Classify call outcome
+            outcome = await self.extractor.classify_call_outcome(transcript)
+            
+            # Update call with results
+            await self.update_call(
+                call_id=call_id,
+                call_update=CallUpdate(
+                    raw_transcript=transcript,
+                    structured_data=structured_data,
+                    call_outcome=outcome,
+                    status=CallStatus.COMPLETED
+                )
+            )
+            
+            return structured_data
+            
+        except Exception as e:
+            logger.error(f"Error processing transcript: {str(e)}")
+            raise
