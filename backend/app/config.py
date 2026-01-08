@@ -17,8 +17,8 @@ class Settings(BaseSettings):
     retell_agent_id: str = ""
     retell_webhook_secret_key: str = ""
 
-    # Server URL for webhooks
-    server_url: str = "http://localhost:8080"
+    # Server URL for webhooks (must match the port where uvicorn is running)
+    server_url: str = "http://localhost:8000"
 
     #LLM - Anthropic
     anthropic_api_key: str = ""
