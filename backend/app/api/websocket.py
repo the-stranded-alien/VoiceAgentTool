@@ -218,7 +218,7 @@ class RetellWebSocketHandler:
             return self._error_response(response_id)
 
         # Generate response using realtime handler
-        agent_response, should_end = self.realtime_handler.generate_response(
+        agent_response, should_end = await self.realtime_handler.generate_response(
             context=context,
             user_utterance=user_utterance,
             confidence=None  # Retell doesn't provide this in transcript

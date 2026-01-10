@@ -86,7 +86,7 @@ export const CallHistoryPage: React.FC = () => {
         call.phone_number,
         call.load_number || '',
         call.status,
-        call.call_duration_seconds ? formatDuration(call.call_duration_seconds) : 'N/A',
+        call.duration ? formatDuration(call.duration) : 'N/A',
         formatDateTime(call.created_at)
       ].join(','))
     ].join('\n');
@@ -114,7 +114,7 @@ export const CallHistoryPage: React.FC = () => {
           <h1 className="text-3xl font-bold text-gray-900">Call History</h1>
           <p className="text-gray-600 mt-1">View and manage all your call records</p>
         </div>
-        <Button onClick={handleExport} variant="outline" className="flex items-center gap-2">
+        <Button onClick={handleExport} variant="primary" className="flex items-center gap-2">
           <Download className="w-4 h-4" />
           Export CSV
         </Button>
@@ -215,7 +215,7 @@ export const CallHistoryPage: React.FC = () => {
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center text-gray-600">
                         <Clock className="w-4 h-4 mr-1" />
-                        {call.call_duration_seconds ? formatDuration(call.call_duration_seconds) : 'N/A'}
+                        {call.duration ? formatDuration(call.duration) : 'N/A'}
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-gray-600">

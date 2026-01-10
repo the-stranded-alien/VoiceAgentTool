@@ -5,12 +5,14 @@ interface LoadingProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   text?: string;
   fullScreen?: boolean;
+  className?: string;
 }
 
 export const Loading: React.FC<LoadingProps> = ({
   size = 'md',
   text,
   fullScreen = false,
+  className = '',
 }) => {
   const sizeMap = {
     sm: 20,
@@ -20,7 +22,7 @@ export const Loading: React.FC<LoadingProps> = ({
   };
 
   const spinner = (
-    <div className="flex flex-col items-center justify-center gap-3">
+    <div className={`flex flex-col items-center justify-center gap-3 ${className}`}>
       <Loader2
         className="animate-spin text-purple-600"
         size={sizeMap[size]}

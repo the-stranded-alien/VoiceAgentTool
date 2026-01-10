@@ -57,7 +57,7 @@ class RealtimeLLMHandler:
         text_lower = text.lower()
         return any(keyword in text_lower for keyword in EMERGENCY_KEYWORDS)
 
-    def generate_response(
+    async def generate_response(
         self,
         context: ConversationContext,
         user_utterance: str,
@@ -92,11 +92,11 @@ class RealtimeLLMHandler:
             return edge_case_response, context.should_end_call
 
         # Generate normal conversational response
-        response = self._generate_conversational_response(context, user_utterance)
+        response = await self._generate_conversational_response(context, user_utterance)
         context.add_turn(TurnRole.AGENT, response)
 
         # Extract data incrementally
-        self._extract_data_incrementally(context, user_utterance)
+        await self._extract_data_incrementally(context, user_utterance)
 
         # Check if conversation should end
         should_end = self._should_end_conversation(context)
@@ -153,7 +153,7 @@ class RealtimeLLMHandler:
             return "I know you're busy, but I just need a little more information real quick."
         return "Could you elaborate on that a bit?"
 
-    def _generate_conversational_response(
+    async def _generate_conversational_response(
         self,
         context: ConversationContext,
         user_utterance: str
@@ -174,6 +174,11 @@ class RealtimeLLMHandler:
             system_prompt = system_prompt.replace("{driver_name}", context.driver_name)
             system_prompt = system_prompt.replace("{load_number}", context.load_number)
 
+            # Add context about what info we still need
+            missing_info_hint = self._get_missing_info_hint(context)
+            if missing_info_hint:
+                system_prompt += f"\n\nCURRENT STATUS: {missing_info_hint}"
+
             # Build conversation history for context
             conversation_msgs = context.get_conversation_for_llm(max_turns=6)
 
@@ -191,7 +196,7 @@ class RealtimeLLMHandler:
             })
 
             # Generate response
-            response = self.llm_client.generate_text(
+            response = await self.llm_client.generate_text(
                 prompt="",  # Empty prompt since we're using messages
                 messages=messages,
                 system_prompt=system_prompt,
@@ -208,6 +213,63 @@ class RealtimeLLMHandler:
             logger.error(f"Error generating response for call {context.call_id}: {e}", exc_info=True)
             # Fallback response
             return self._get_fallback_response(context)
+
+    def _get_missing_info_hint(self, context: ConversationContext) -> str:
+        """
+        Generate hint about what information is still needed
+
+        This guides the LLM to ask appropriate follow-up questions
+        """
+        if context.is_emergency:
+            missing = []
+            if not context.extracted_data.get("safety_status"):
+                missing.append("safety status")
+            if not context.extracted_data.get("injury_status"):
+                missing.append("injury status")
+            if not context.extracted_data.get("emergency_location"):
+                missing.append("exact location")
+            if not context.extracted_data.get("emergency_type"):
+                missing.append("emergency type")
+            if not context.extracted_data.get("load_secure"):
+                missing.append("load security")
+
+            if missing:
+                return f"Still need to ask about: {', '.join(missing)}"
+
+        elif context.scenario == "check_in":
+            driver_status = context.extracted_data.get("driver_status")
+
+            if not driver_status:
+                return "Need to determine driver's current status first"
+
+            missing = []
+
+            if driver_status == "Driving":
+                if not context.extracted_data.get("current_location"):
+                    missing.append("current location")
+                if not context.extracted_data.get("eta"):
+                    missing.append("ETA")
+                if not context.extracted_data.get("delay_reason"):
+                    missing.append("any delays or issues")
+
+            elif driver_status in ["Arrived", "Unloading"]:
+                if not context.extracted_data.get("unloading_status"):
+                    missing.append("unloading status/door number")
+                if not context.extracted_data.get("pod_reminder_acknowledged"):
+                    missing.append("POD reminder")
+
+            elif driver_status == "Delayed":
+                if not context.extracted_data.get("current_location"):
+                    missing.append("current location")
+                if not context.extracted_data.get("delay_reason"):
+                    missing.append("reason for delay")
+                if not context.extracted_data.get("eta"):
+                    missing.append("new ETA")
+
+            if missing:
+                return f"Still need to ask about: {', '.join(missing)}"
+
+        return ""
 
     def _clean_response(self, response: str) -> str:
         """Clean up LLM response to remove meta-commentary"""
@@ -227,7 +289,31 @@ class RealtimeLLMHandler:
         else:
             return "Got it. Anything else I should know?"
 
-    def _extract_data_incrementally(
+    def _detect_pod_acknowledgment(self, agent_message: str, user_response: str) -> bool:
+        """
+        Detect if driver acknowledged POD reminder
+
+        Looks for POD reminder in agent message and positive acknowledgment in user response
+        """
+        # Check if agent mentioned POD
+        pod_keywords = ["pod", "proof of delivery", "paperwork", "documentation"]
+        agent_lower = agent_message.lower()
+        has_pod_mention = any(keyword in agent_lower for keyword in pod_keywords)
+
+        if not has_pod_mention:
+            return False
+
+        # Check for positive acknowledgment in user response
+        positive_keywords = [
+            "ok", "okay", "sure", "yes", "yeah", "yep", "got it",
+            "will do", "no problem", "understood", "sounds good", "alright"
+        ]
+        user_lower = user_response.lower()
+        has_acknowledgment = any(keyword in user_lower for keyword in positive_keywords)
+
+        return has_acknowledgment
+
+    async def _extract_data_incrementally(
         self,
         context: ConversationContext,
         user_utterance: str
@@ -238,6 +324,19 @@ class RealtimeLLMHandler:
         Performs incremental extraction so we track what's been collected
         """
         try:
+            # Check for POD acknowledgment (special case)
+            if len(context.conversation_history) >= 2:
+                last_agent_message = None
+                for turn in reversed(context.conversation_history):
+                    if turn.role == TurnRole.AGENT:
+                        last_agent_message = turn.content
+                        break
+
+                if last_agent_message:
+                    if self._detect_pod_acknowledgment(last_agent_message, user_utterance):
+                        context.update_extracted_data("pod_reminder_acknowledged", True)
+                        logger.debug(f"Call {context.call_id}: POD reminder acknowledged")
+
             # Build conversation excerpt for extraction
             recent_turns = context.get_conversation_for_llm(max_turns=4)
             conversation_text = "\n".join([
@@ -248,7 +347,7 @@ class RealtimeLLMHandler:
             # Extract based on scenario
             if context.is_emergency:
                 # Emergency data extraction
-                extracted = self.extractor.extract_from_transcript(
+                extracted = await self.extractor.extract_from_transcript(
                     transcript=conversation_text,
                     scenario_type="emergency",
                     driver_name=context.driver_name,
@@ -256,7 +355,7 @@ class RealtimeLLMHandler:
                 )
             else:
                 # Check-in data extraction
-                extracted = self.extractor.extract_from_transcript(
+                extracted = await self.extractor.extract_from_transcript(
                     transcript=conversation_text,
                     scenario_type="check_in",
                     driver_name=context.driver_name,
@@ -281,19 +380,62 @@ class RealtimeLLMHandler:
         Returns:
             True if call should end
         """
-        # Emergency calls end after escalation statement
+        # Emergency calls end after gathering critical info
         if context.is_emergency:
-            # Check if we've gathered critical emergency info
-            critical_fields = ["emergency_type", "safety_status", "emergency_location"]
-            if context.is_complete(critical_fields):
+            # Required emergency fields
+            critical_fields = [
+                "emergency_type",
+                "safety_status",
+                "injury_status",
+                "emergency_location",
+                "load_secure"
+            ]
+            # Check if we have most critical info (safety + location minimum)
+            has_safety = context.extracted_data.get("safety_status") is not None
+            has_location = context.extracted_data.get("emergency_location") is not None
+            has_type = context.extracted_data.get("emergency_type") is not None
+
+            # End if we have safety status, location, and type (minimum for escalation)
+            if has_safety and has_location and has_type:
                 return True
 
-        # Normal calls end when all info gathered or too many turns
-        if context.scenario == "check_in":
-            # Don't force completion, let it be natural
-            # But end if conversation is going too long
+            # Also end if too many turns in emergency (shouldn't take long)
+            if context.turn_count > 12:  # ~6 exchanges
+                return True
+
+        # Normal check-in calls
+        elif context.scenario == "check_in":
+            # Determine required fields based on driver status
+            driver_status = context.extracted_data.get("driver_status")
+
+            if driver_status == "Driving":
+                # For driving: need location, ETA, delay info
+                required = ["driver_status", "current_location", "eta"]
+                optional_asked = context.turn_count >= 6  # Asked about delays/issues
+                if context.is_complete(required) and optional_asked:
+                    return True
+
+            elif driver_status in ["Arrived", "Unloading"]:
+                # For arrived: need unloading status and POD reminder
+                required = ["driver_status", "current_location", "unloading_status", "pod_reminder_acknowledged"]
+                if context.is_complete(required):
+                    return True
+
+            elif driver_status == "Delayed":
+                # For delayed: need location, reason, new ETA
+                required = ["driver_status", "current_location", "delay_reason", "eta"]
+                if context.is_complete(required):
+                    return True
+
+            # End if conversation is too long (natural limit)
             if context.turn_count > 20:  # ~10 exchanges
                 return True
+
+            # End if we have call_outcome set (indicates completion)
+            if context.extracted_data.get("call_outcome"):
+                # Give a couple more turns for POD reminder if needed
+                if context.turn_count >= 8:
+                    return True
 
         return False
 

@@ -18,34 +18,47 @@ class LLMClient:
     
     async def generate_text(
         self,
-        prompt: str,
+        prompt: str = "",
         system: Optional[str] = None,
+        system_prompt: Optional[str] = None,  # Alias for system
         temperature: Optional[float] = None,
         max_tokens: Optional[int] = None,
+        messages: Optional[List[Dict[str, str]]] = None,  # Support multi-turn conversations
     ) -> str:
         """
         Generate text completion from Claude
-        
+
         Args:
-            prompt: User prompt
+            prompt: User prompt (single turn)
             system: System prompt (instructions for Claude)
+            system_prompt: Alias for system parameter
             temperature: Sampling temperature (0.0 = deterministic, 1.0 = creative)
             max_tokens: Maximum tokens to generate
-            
+            messages: Multi-turn conversation messages (if provided, overrides prompt)
+
         Returns:
             Generated text response
         """
         try:
-            messages = [{"role": "user", "content": prompt}]
-            
+            # Use system_prompt alias if provided
+            system_text = system_prompt or system or ""
+
+            # Build messages
+            if messages:
+                # Use provided multi-turn messages
+                msg_list = messages
+            else:
+                # Single turn with prompt
+                msg_list = [{"role": "user", "content": prompt}]
+
             response = self.client.messages.create(
                 model=self.model,
                 max_tokens=max_tokens or self.max_tokens,
                 temperature=temperature if temperature is not None else self.temperature,
-                system=system or "",
-                messages=messages
+                system=system_text,
+                messages=msg_list
             )
-            
+
             # Extract text from response
             return response.content[0].text
             
