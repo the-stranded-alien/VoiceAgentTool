@@ -53,7 +53,7 @@ const Dashboard: React.FC = () => {
           <Button
             variant="primary"
             icon={<Plus size={18} />}
-            onClick={() => navigate('/agent-configs')}
+            onClick={() => navigate('/trigger-call')}
           >
             New Call
           </Button>

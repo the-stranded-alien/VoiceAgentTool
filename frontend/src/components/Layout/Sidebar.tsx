@@ -27,7 +27,7 @@ const navItems: NavItem[] = [
     icon: <LayoutDashboard size={20} />,
   },
   {
-    path: '/agent-configs',
+    path: '/agents',
     label: 'Agent Configs',
     icon: <Bot size={20} />,
   },

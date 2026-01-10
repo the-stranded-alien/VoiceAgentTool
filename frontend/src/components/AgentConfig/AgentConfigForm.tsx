@@ -22,23 +22,30 @@ export const AgentConfigForm: React.FC<AgentConfigFormProps> = ({
 }) => {
   const [formData, setFormData] = useState<Partial<AgentConfig>>({
     name: '',
+    description: '',
+    scenario_type: 'check_in',
     system_prompt: '',
-    voice_id: '',
-    voice_temperature: 1.0,
-    voice_speed: 1.0,
-    responsiveness: 1.0,
-    interruption_sensitivity: 1.0,
-    enable_backchannel: false,
-    backchannel_frequency: 0.8,
-    backchannel_words: ['yeah', 'uh-huh', 'mm-hmm'],
-    reminder_trigger_ms: 10000,
-    reminder_max_count: 3,
-    ambient_sound: 'off',
-    ambient_sound_volume: 0.5,
-    language: 'en-US',
-    webhook_url: '',
-    opt_out_sensitive_data_storage: false,
-    normalize_for_speech: true,
+    voice_settings: {
+      voice_id: 'default',
+      response_delay: 0.8,
+      interruption_sensitivity: 0.7,
+      backchannel: {
+        enabled: true,
+        frequency: 'medium',
+      },
+      filler_words: {
+        enabled: true,
+      },
+      ambient_sound: false,
+      speaking_rate: 'normal',
+    },
+    advanced_settings: {
+      max_call_duration_minutes: 10,
+      retry_attempts: 3,
+      auto_escalate_emergency: true,
+      record_calls: true,
+    },
+    status: 'active',
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -49,23 +56,30 @@ export const AgentConfigForm: React.FC<AgentConfigFormProps> = ({
     } else {
       setFormData({
         name: '',
+        description: '',
+        scenario_type: 'check_in',
         system_prompt: '',
-        voice_id: '',
-        voice_temperature: 1.0,
-        voice_speed: 1.0,
-        responsiveness: 1.0,
-        interruption_sensitivity: 1.0,
-        enable_backchannel: false,
-        backchannel_frequency: 0.8,
-        backchannel_words: ['yeah', 'uh-huh', 'mm-hmm'],
-        reminder_trigger_ms: 10000,
-        reminder_max_count: 3,
-        ambient_sound: 'off',
-        ambient_sound_volume: 0.5,
-        language: 'en-US',
-        webhook_url: '',
-        opt_out_sensitive_data_storage: false,
-        normalize_for_speech: true,
+        voice_settings: {
+          voice_id: 'default',
+          response_delay: 0.8,
+          interruption_sensitivity: 0.7,
+          backchannel: {
+            enabled: true,
+            frequency: 'medium',
+          },
+          filler_words: {
+            enabled: true,
+          },
+          ambient_sound: false,
+          speaking_rate: 'normal',
+        },
+        advanced_settings: {
+          max_call_duration_minutes: 10,
+          retry_attempts: 3,
+          auto_escalate_emergency: true,
+          record_calls: true,
+        },
+        status: 'active',
       });
     }
     setErrors({});
@@ -99,6 +113,10 @@ export const AgentConfigForm: React.FC<AgentConfigFormProps> = ({
       newErrors.system_prompt = 'System prompt is required';
     }
 
+    if (!formData.scenario_type?.trim()) {
+      newErrors.scenario_type = 'Scenario type is required';
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -110,12 +128,7 @@ export const AgentConfigForm: React.FC<AgentConfigFormProps> = ({
       return;
     }
 
-    try {
-      await onSave(formData);
-      onClose();
-    } catch (error) {
-      console.error('Error saving config:', error);
-    }
+    await onSave(formData);
   };
 
   return (
@@ -123,18 +136,7 @@ export const AgentConfigForm: React.FC<AgentConfigFormProps> = ({
       isOpen={isOpen}
       onClose={onClose}
       title={config ? 'Edit Agent Configuration' : 'Create Agent Configuration'}
-      size="xl"
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose} disabled={loading}>
-            <X size={16} />
-            Cancel
-          </Button>
-          <Button onClick={handleSubmit} loading={loading} icon={<Save size={16} />}>
-            {config ? 'Update' : 'Create'}
-          </Button>
-        </>
-      }
+      size="lg"
     >
       <form onSubmit={handleSubmit} className="space-y-6">
         {/* Basic Information */}
@@ -144,14 +146,48 @@ export const AgentConfigForm: React.FC<AgentConfigFormProps> = ({
           </h3>
 
           <Input
-            label="Configuration Name"
+            label="Name"
             name="name"
-            value={formData.name}
+            value={formData.name || ''}
             onChange={handleChange}
             error={errors.name}
+            placeholder="e.g., Driver Check-In Agent"
             required
-            placeholder="e.g., Freight Check-in Agent"
           />
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Description
+            </label>
+            <textarea
+              name="description"
+              value={formData.description || ''}
+              onChange={handleChange}
+              rows={2}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+              placeholder="Brief description of what this agent does"
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Scenario Type <span className="text-red-500">*</span>
+            </label>
+            <select
+              name="scenario_type"
+              value={formData.scenario_type || 'check_in'}
+              onChange={handleChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="check_in">Check-In</option>
+              <option value="emergency">Emergency</option>
+              <option value="delivery">Delivery</option>
+              <option value="custom">Custom</option>
+            </select>
+            {errors.scenario_type && (
+              <p className="text-sm text-red-600 mt-1">{errors.scenario_type}</p>
+            )}
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -159,23 +195,14 @@ export const AgentConfigForm: React.FC<AgentConfigFormProps> = ({
             </label>
             <textarea
               name="system_prompt"
-              value={formData.system_prompt}
+              value={formData.system_prompt || ''}
               onChange={handleChange}
-              rows={6}
-              className={`
-                w-full rounded-lg border transition-all duration-200 px-3 py-2
-                ${
-                  errors.system_prompt
-                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                    : 'border-gray-300 focus:border-purple-500 focus:ring-purple-500'
-                }
-                focus:outline-none focus:ring-2 focus:ring-offset-0
-                font-mono text-sm
-              `}
-              placeholder="Enter the system prompt for the AI agent..."
+              rows={8}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent font-mono text-sm"
+              placeholder="Enter the system prompt that defines the agent's behavior..."
             />
             {errors.system_prompt && (
-              <p className="mt-1 text-sm text-red-600">{errors.system_prompt}</p>
+              <p className="text-sm text-red-600 mt-1">{errors.system_prompt}</p>
             )}
           </div>
         </div>
@@ -186,118 +213,89 @@ export const AgentConfigForm: React.FC<AgentConfigFormProps> = ({
             Voice Settings
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              label="Voice ID"
-              name="voice_id"
-              value={formData.voice_id}
-              onChange={handleChange}
-              placeholder="e.g., 11labs-voice-id"
-            />
+          <Input
+            label="Voice ID"
+            name="voice_id"
+            value={formData.voice_settings?.voice_id || 'default'}
+            onChange={(e) => {
+              setFormData((prev) => ({
+                ...prev,
+                voice_settings: {
+                  ...prev.voice_settings,
+                  voice_id: e.target.value,
+                },
+              }));
+            }}
+            placeholder="default"
+          />
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Language
-              </label>
-              <select
-                name="language"
-                value={formData.language}
-                onChange={handleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="en-US">English (US)</option>
-                <option value="en-GB">English (UK)</option>
-                <option value="es-ES">Spanish</option>
-                <option value="fr-FR">French</option>
-                <option value="de-DE">German</option>
-              </select>
-            </div>
-
-            <Input
-              label="Voice Temperature"
-              name="voice_temperature"
-              type="number"
-              step="0.1"
-              min="0"
-              max="2"
-              value={formData.voice_temperature}
-              onChange={handleChange}
-              helperText="0.0 - 2.0"
-            />
-
-            <Input
-              label="Voice Speed"
-              name="voice_speed"
-              type="number"
-              step="0.1"
-              min="0.5"
-              max="2"
-              value={formData.voice_speed}
-              onChange={handleChange}
-              helperText="0.5 - 2.0"
-            />
-
-            <Input
-              label="Responsiveness"
-              name="responsiveness"
-              type="number"
-              step="0.1"
-              min="0"
-              max="2"
-              value={formData.responsiveness}
-              onChange={handleChange}
-              helperText="Higher = faster response"
-            />
-
-            <Input
-              label="Interruption Sensitivity"
-              name="interruption_sensitivity"
-              type="number"
-              step="0.1"
-              min="0"
-              max="2"
-              value={formData.interruption_sensitivity}
-              onChange={handleChange}
-              helperText="Higher = easier to interrupt"
-            />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Speaking Rate
+            </label>
+            <select
+              value={formData.voice_settings?.speaking_rate || 'normal'}
+              onChange={(e) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  voice_settings: {
+                    ...prev.voice_settings,
+                    speaking_rate: e.target.value,
+                  },
+                }));
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="slow">Slow</option>
+              <option value="normal">Normal</option>
+              <option value="fast">Fast</option>
+            </select>
           </div>
-        </div>
 
-        {/* Backchannel Settings */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-semibold text-gray-900 border-b pb-2">
-            Backchannel Settings
-          </h3>
-
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <input
               type="checkbox"
-              id="enable_backchannel"
-              name="enable_backchannel"
-              checked={formData.enable_backchannel}
-              onChange={handleChange}
+              checked={formData.voice_settings?.backchannel?.enabled || false}
+              onChange={(e) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  voice_settings: {
+                    ...prev.voice_settings,
+                    backchannel: {
+                      ...prev.voice_settings?.backchannel,
+                      enabled: e.target.checked,
+                    },
+                  },
+                }));
+              }}
               className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
             />
-            <label htmlFor="enable_backchannel" className="text-sm font-medium text-gray-700">
-              Enable Backchannel (conversational fillers)
+            <label className="text-sm font-medium text-gray-700">
+              Enable Backchannel (verbal acknowledgments)
             </label>
           </div>
 
-          {formData.enable_backchannel && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pl-7">
-              <Input
-                label="Backchannel Frequency"
-                name="backchannel_frequency"
-                type="number"
-                step="0.1"
-                min="0"
-                max="1"
-                value={formData.backchannel_frequency}
-                onChange={handleChange}
-                helperText="0.0 - 1.0"
-              />
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={formData.voice_settings?.filler_words?.enabled || false}
+              onChange={(e) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  voice_settings: {
+                    ...prev.voice_settings,
+                    filler_words: {
+                      enabled: e.target.checked,
+                    },
+                  },
+                }));
+              }}
+              className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+            />
+            <label className="text-sm font-medium text-gray-700">
+              Enable Filler Words (um, uh, etc.)
+            </label>
+          </div>
         </div>
 
         {/* Advanced Settings */}
@@ -306,99 +304,101 @@ export const AgentConfigForm: React.FC<AgentConfigFormProps> = ({
             Advanced Settings
           </h3>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Input
-              label="Reminder Trigger (ms)"
-              name="reminder_trigger_ms"
-              type="number"
-              step="1000"
-              value={formData.reminder_trigger_ms}
-              onChange={handleChange}
-              helperText="Time before reminder"
-            />
+          <Input
+            label="Max Call Duration (minutes)"
+            name="max_call_duration_minutes"
+            type="number"
+            value={formData.advanced_settings?.max_call_duration_minutes || 10}
+            onChange={(e) => {
+              setFormData((prev) => ({
+                ...prev,
+                advanced_settings: {
+                  ...prev.advanced_settings,
+                  max_call_duration_minutes: parseInt(e.target.value) || 10,
+                },
+              }));
+            }}
+            min={1}
+            max={60}
+          />
 
-            <Input
-              label="Max Reminder Count"
-              name="reminder_max_count"
-              type="number"
-              value={formData.reminder_max_count}
-              onChange={handleChange}
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={formData.advanced_settings?.auto_escalate_emergency || false}
+              onChange={(e) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  advanced_settings: {
+                    ...prev.advanced_settings,
+                    auto_escalate_emergency: e.target.checked,
+                  },
+                }));
+              }}
+              className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
             />
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ambient Sound
-              </label>
-              <select
-                name="ambient_sound"
-                value={formData.ambient_sound}
-                onChange={handleChange}
-                className="w-full rounded-lg border border-gray-300 px-3 py-2 focus:outline-none focus:ring-2 focus:ring-purple-500"
-              >
-                <option value="off">Off</option>
-                <option value="office">Office</option>
-                <option value="cafe">Cafe</option>
-                <option value="restaurant">Restaurant</option>
-              </select>
-            </div>
-
-            <Input
-              label="Ambient Sound Volume"
-              name="ambient_sound_volume"
-              type="number"
-              step="0.1"
-              min="0"
-              max="1"
-              value={formData.ambient_sound_volume}
-              onChange={handleChange}
-              helperText="0.0 - 1.0"
-            />
-
-            <Input
-              label="Webhook URL"
-              name="webhook_url"
-              value={formData.webhook_url}
-              onChange={handleChange}
-              placeholder="https://your-webhook-url.com"
-            />
+            <label className="text-sm font-medium text-gray-700">
+              Auto-escalate emergency calls to human
+            </label>
           </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="normalize_for_speech"
-                name="normalize_for_speech"
-                checked={formData.normalize_for_speech}
-                onChange={handleChange}
-                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
-              />
-              <label htmlFor="normalize_for_speech" className="text-sm font-medium text-gray-700">
-                Normalize text for speech
-              </label>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <input
-                type="checkbox"
-                id="opt_out_sensitive_data_storage"
-                name="opt_out_sensitive_data_storage"
-                checked={formData.opt_out_sensitive_data_storage}
-                onChange={handleChange}
-                className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
-              />
-              <label
-                htmlFor="opt_out_sensitive_data_storage"
-                className="text-sm font-medium text-gray-700"
-              >
-                Opt out of sensitive data storage
-              </label>
-            </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              checked={formData.advanced_settings?.record_calls || false}
+              onChange={(e) => {
+                setFormData((prev) => ({
+                  ...prev,
+                  advanced_settings: {
+                    ...prev.advanced_settings,
+                    record_calls: e.target.checked,
+                  },
+                }));
+              }}
+              className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+            />
+            <label className="text-sm font-medium text-gray-700">
+              Record calls for quality assurance
+            </label>
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Status
+            </label>
+            <select
+              name="status"
+              value={formData.status || 'active'}
+              onChange={handleChange}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+            >
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Form Actions */}
+        <div className="flex justify-end gap-3 pt-4 border-t">
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={onClose}
+            disabled={loading}
+            icon={<X size={18} />}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            loading={loading}
+            icon={<Save size={18} />}
+          >
+            {config ? 'Update' : 'Create'} Configuration
+          </Button>
         </div>
       </form>
     </Modal>
   );
 };
-
-

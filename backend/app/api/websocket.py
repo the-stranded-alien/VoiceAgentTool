@@ -42,7 +42,7 @@ class RetellWebSocketHandler:
             websocket: FastAPI WebSocket connection
         """
         await websocket.accept()
-        logger.info("WebSocket connection established")
+        logger.info(f"WebSocket connection established from {websocket.client}")
 
         call_id = None
 
@@ -56,6 +56,12 @@ class RetellWebSocketHandler:
 
                 # Handle different message types
                 response = await self._handle_message(message)
+
+                # Extract call_id from call_details message if not already set
+                if call_id is None and message.get("interaction_type") == "call_details":
+                    variables = message.get("retell_llm_dynamic_variables", {})
+                    call_id = variables.get("call_id", message.get("call_id"))
+                    logger.info(f"Extracted call_id: {call_id}")
 
                 if response:
                     # Send response back to Retell
@@ -72,8 +78,9 @@ class RetellWebSocketHandler:
         except Exception as e:
             logger.error(f"WebSocket error: {e}", exc_info=True)
         finally:
-            # Cleanup context when call ends
+            # Save call data and cleanup context when call ends
             if call_id:
+                await self._save_call_data(call_id)
                 self.context_manager.remove_context(call_id)
                 logger.info(f"Cleaned up context for call {call_id}")
 
@@ -274,6 +281,74 @@ class RetellWebSocketHandler:
             "end_call": False
         }
 
+    async def _save_call_data(self, call_id: str):
+        """
+        Save extracted conversation data to database when call ends
+
+        Args:
+            call_id: Internal call ID
+        """
+        try:
+            # Import dependencies at the top
+            from app.database import get_supabase
+            from app.services.call_service import CallService
+            from app.models.call import CallUpdate, CallStatus
+            from datetime import datetime
+
+            # Get context before it's removed
+            context = self.context_manager.get_context(call_id)
+            if not context:
+                logger.warning(f"No context found for call {call_id}, cannot save data")
+                return
+
+            # Build transcript from conversation history
+            transcript_lines = []
+            for turn in context.conversation_history:
+                role = "Dispatcher" if turn.role == TurnRole.AGENT else "Driver"
+                transcript_lines.append(f"{role}: {turn.content}")
+            transcript = "\n\n".join(transcript_lines)
+
+            # Get extracted data
+            structured_data = context.extracted_data
+            call_outcome = structured_data.get("call_outcome", "Completed")
+
+            # Determine final status
+            if context.is_emergency:
+                status = CallStatus.ESCALATED
+            elif context.end_call_reason == "unresponsive_driver":
+                status = CallStatus.FAILED
+            elif context.end_call_reason == "poor_connection":
+                status = CallStatus.FAILED
+            elif transcript:
+                status = CallStatus.COMPLETED
+            else:
+                status = CallStatus.FAILED
+
+            # Calculate call duration (rough estimate from turn count)
+            # In production, you'd track actual start/end times
+            call_duration = len(context.conversation_history) * 5  # Rough estimate: 5 seconds per turn
+
+            # Update call in database
+            supabase = get_supabase()
+            call_service = CallService(supabase)
+
+            await call_service.update_call(
+                call_id=call_id,
+                call_update=CallUpdate(
+                    status=status,
+                    raw_transcript=transcript,
+                    structured_data=structured_data,
+                    call_outcome=call_outcome,
+                    call_duration_seconds=call_duration,
+                    completed_at=datetime.now()
+                )
+            )
+
+            logger.info(f"Saved call data for {call_id}: {call_outcome} (status: {status})")
+
+        except Exception as e:
+            logger.error(f"Error saving call data for {call_id}: {e}", exc_info=True)
+
     def _error_response(self, response_id: int) -> Dict[str, Any]:
         """Generate error response"""
         return {
@@ -292,10 +367,30 @@ _ws_handler = RetellWebSocketHandler()
 @router.websocket("/llm")
 async def retell_llm_websocket(websocket: WebSocket):
     """
-    WebSocket endpoint for Retell AI Custom LLM
+    WebSocket endpoint for Retell AI Custom LLM (base path)
 
     Retell will connect to: ws://your-domain/ws/llm
 
     This endpoint handles real-time conversation during calls
     """
+    await _ws_handler.handle_connection(websocket)
+
+
+@router.websocket("/llm/{call_id:path}")
+async def retell_llm_websocket_with_call_id(websocket: WebSocket, call_id: str):
+    """
+    WebSocket endpoint for Retell AI Custom LLM with call ID in path
+
+    Retell appends the call ID to the WebSocket URL in formats like:
+    - ws://your-domain/ws/llm/call_d458af3989b089f096ea90269d3
+    - wss://your-ngrok-url/ws/llm/call_abc123
+
+    This endpoint accepts those formats while maintaining compatibility
+    with the base /ws/llm endpoint.
+
+    Args:
+        websocket: FastAPI WebSocket connection
+        call_id: Call ID from URL path (informational only)
+    """
+    logger.info(f"WebSocket connection attempt with call_id in path: {call_id}")
     await _ws_handler.handle_connection(websocket)

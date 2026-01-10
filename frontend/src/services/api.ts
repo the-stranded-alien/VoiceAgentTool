@@ -58,31 +58,31 @@ apiClient.interceptors.response.use(
 export const agentConfigApi = {
   // Get all agent configurations
   getAll: async (): Promise<AgentConfig[]> => {
-    const response = await apiClient.get<AgentConfig[]>('/agent-configs');
+    const response = await apiClient.get<AgentConfig[]>('/agents/');
     return response.data;
   },
 
   // Get single agent configuration by ID
   getById: async (id: string): Promise<AgentConfig> => {
-    const response = await apiClient.get<AgentConfig>(`/agent-configs/${id}`);
+    const response = await apiClient.get<AgentConfig>(`/agents/${id}`);
     return response.data;
   },
 
   // Create new agent configuration
   create: async (data: Omit<AgentConfig, 'id' | 'created_at' | 'updated_at'>): Promise<AgentConfig> => {
-    const response = await apiClient.post<AgentConfig>('/agent-configs', data);
+    const response = await apiClient.post<AgentConfig>('/agents/', data);
     return response.data;
   },
 
   // Update existing agent configuration
   update: async (id: string, data: Partial<AgentConfig>): Promise<AgentConfig> => {
-    const response = await apiClient.put<AgentConfig>(`/agent-configs/${id}`, data);
+    const response = await apiClient.put<AgentConfig>(`/agents/${id}`, data);
     return response.data;
   },
 
   // Delete agent configuration
   delete: async (id: string): Promise<void> => {
-    await apiClient.delete(`/agent-configs/${id}`);
+    await apiClient.delete(`/agents/${id}`);
   },
 };
 

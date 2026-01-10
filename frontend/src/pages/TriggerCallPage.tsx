@@ -46,7 +46,7 @@ export const TriggerCallPage: React.FC = () => {
 
     try {
       const response = await api.createCall(formData);
-      setSuccess(`Call initiated successfully! Call ID: ${response.call_id}`);
+      setSuccess(`Call initiated successfully! Call ID: ${response.id}`);
 
       // Reset form
       setFormData({
@@ -58,7 +58,7 @@ export const TriggerCallPage: React.FC = () => {
 
       // Navigate to call details after 2 seconds
       setTimeout(() => {
-        navigate(`/calls/${response.call_id}`);
+        navigate(`/calls/${response.id}`);
       }, 2000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to initiate call');
@@ -164,7 +164,7 @@ export const TriggerCallPage: React.FC = () => {
             </label>
             <Input
               type="tel"
-              name="driver_phone"
+              name="phone_number"
               value={formData.phone_number}
               onChange={handleChange}
               placeholder="+1234567890"

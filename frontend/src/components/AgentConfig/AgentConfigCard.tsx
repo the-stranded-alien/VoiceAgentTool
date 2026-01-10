@@ -21,16 +21,24 @@ export const AgentConfigCard: React.FC<AgentConfigCardProps> = ({
   return (
     <Card hover glass onClick={onSelect ? () => onSelect(config) : undefined}>
       <div className="flex items-start justify-between mb-4">
-        <div className="flex items-start gap-3 flex-1">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
           <div className="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg flex-shrink-0">
             <Bot size={24} className="text-white" />
           </div>
           <div className="flex-1 min-w-0">
-            <h3 className="text-lg font-bold text-gray-900 mb-1 truncate">
-              {config.name}
-            </h3>
-            <p className="text-sm text-gray-500 line-clamp-2">
-              {config.system_prompt}
+            <div className="flex items-center gap-2 mb-1">
+              <h3 className="text-lg font-bold text-gray-900 truncate">
+                {config.name}
+              </h3>
+              <Badge
+                variant={config.status === 'active' ? 'success' : 'warning'}
+                size="sm"
+              >
+                {config.status}
+              </Badge>
+            </div>
+            <p className="text-sm text-gray-500 line-clamp-2 break-words">
+              {config.description}
             </p>
           </div>
         </div>
@@ -38,18 +46,24 @@ export const AgentConfigCard: React.FC<AgentConfigCardProps> = ({
 
       <div className="space-y-3 mb-4">
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Voice ID:</span>
-          <Badge variant="info" size="sm">{config.voice_id || 'Default'}</Badge>
+          <span className="text-gray-600">Scenario:</span>
+          <Badge variant="info" size="sm" className="capitalize">
+            {config.scenario_type.replace('_', ' ')}
+          </Badge>
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Language:</span>
-          <span className="font-medium text-gray-900">{config.language || 'en-US'}</span>
+          <span className="text-gray-600">Voice:</span>
+          <span className="font-medium text-gray-900 truncate ml-2">
+            {config.voice_settings?.voice_id || 'default'}
+          </span>
         </div>
         <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-600">Responsiveness:</span>
-          <span className="font-medium text-gray-900">{config.responsiveness || 1.0}</span>
+          <span className="text-gray-600">Max Duration:</span>
+          <span className="font-medium text-gray-900">
+            {config.advanced_settings?.max_call_duration_minutes || 10} min
+          </span>
         </div>
-        {config.enable_backchannel && (
+        {config.voice_settings?.backchannel?.enabled && (
           <div className="flex items-center gap-2 text-sm text-green-600">
             <CheckCircle size={16} />
             <span>Backchannel enabled</span>

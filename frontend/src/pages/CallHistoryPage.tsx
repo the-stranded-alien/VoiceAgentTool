@@ -129,16 +129,13 @@ export const CallHistoryPage: React.FC = () => {
       <Card>
         <div className="flex flex-col md:flex-row gap-4 mb-6">
           <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <Input
-                type="text"
-                placeholder="Search by driver name, phone, or load number..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+            <Input
+              type="text"
+              placeholder="Search by driver name, phone, or load number..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              icon={<Search className="w-5 h-5" />}
+            />
           </div>
           <div className="flex items-center gap-2">
             <Filter className="w-5 h-5 text-gray-500" />

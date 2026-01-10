@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -13,8 +13,26 @@ class CallStatus(str, Enum):
 class CallCreate(BaseModel):
     agent_config_id: str
     driver_name: str
-    driver_phone: str
-    load_number: str
+    driver_phone: Optional[str] = None
+    phone_number: Optional[str] = Field(default=None, exclude=True)  # Frontend field, not in DB
+    load_number: Optional[str] = None
+
+    @model_validator(mode='before')
+    @classmethod
+    def validate_phone(cls, data: Any) -> Any:
+        """Accept either driver_phone or phone_number from frontend"""
+        if isinstance(data, dict):
+            # If phone_number is provided but not driver_phone, copy it
+            if data.get('phone_number') and not data.get('driver_phone'):
+                data['driver_phone'] = data['phone_number']
+            # If driver_phone is provided but not phone_number, copy it
+            elif data.get('driver_phone') and not data.get('phone_number'):
+                data['phone_number'] = data['driver_phone']
+
+            # Ensure at least one phone field is provided
+            if not data.get('driver_phone') and not data.get('phone_number'):
+                raise ValueError('Either driver_phone or phone_number must be provided')
+        return data
 
 class CallUpdate(BaseModel):
     status: Optional[CallStatus] = None

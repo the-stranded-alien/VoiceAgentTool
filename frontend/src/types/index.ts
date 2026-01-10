@@ -20,27 +20,38 @@ export interface StructuredData {
   [key: string]: any;
 }
 
+export interface VoiceSettings {
+  voice_id?: string;
+  response_delay?: number;
+  interruption_sensitivity?: number;
+  backchannel?: {
+    enabled: boolean;
+    frequency?: string;
+  };
+  filler_words?: {
+    enabled: boolean;
+  };
+  ambient_sound?: boolean;
+  speaking_rate?: string;
+}
+
+export interface AdvancedSettings {
+  max_call_duration_minutes?: number;
+  retry_attempts?: number;
+  auto_escalate_emergency?: boolean;
+  record_calls?: boolean;
+}
+
 export interface AgentConfig {
   id?: string;
   name: string;
+  description?: string;
+  scenario_type: string;
   system_prompt: string;
-  voice_id?: string;
-  voice_temperature?: number;
-  voice_speed?: number;
-  responsiveness?: number;
-  interruption_sensitivity?: number;
-  enable_backchannel?: boolean;
-  backchannel_frequency?: number;
-  backchannel_words?: string[];
-  reminder_trigger_ms?: number;
-  reminder_max_count?: number;
-  ambient_sound?: string;
-  ambient_sound_volume?: number;
-  language?: string;
-  webhook_url?: string;
-  boosted_keywords?: string[];
-  opt_out_sensitive_data_storage?: boolean;
-  normalize_for_speech?: boolean;
+  conversation_rules?: Record<string, any>;
+  voice_settings?: VoiceSettings;
+  advanced_settings?: AdvancedSettings;
+  status?: 'active' | 'inactive';
   created_at?: string;
   updated_at?: string;
 }
