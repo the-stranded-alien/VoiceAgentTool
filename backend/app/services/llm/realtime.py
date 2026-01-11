@@ -266,9 +266,11 @@ class RealtimeLLMHandler:
                 is_emergency=context.is_emergency
             )
 
-            # Format with driver info
-            system_prompt = system_prompt.replace("{driver_name}", context.driver_name)
-            system_prompt = system_prompt.replace("{load_number}", context.load_number)
+            # Format with driver info - handle None values for test calls
+            driver_name_str = context.driver_name if context.driver_name else "[Driver name not provided - ask for it]"
+            load_number_str = context.load_number if context.load_number else "[Load number not provided - ask for it]"
+            system_prompt = system_prompt.replace("{driver_name}", driver_name_str)
+            system_prompt = system_prompt.replace("{load_number}", load_number_str)
 
             # Add context about what info we still need
             missing_info_hint = self._get_missing_info_hint(context)

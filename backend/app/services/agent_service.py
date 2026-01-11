@@ -1,4 +1,5 @@
 from typing import List, Optional
+import logging
 from supabase import Client
 from app.models.agent import (
     AgentConfigCreate,
@@ -6,6 +7,9 @@ from app.models.agent import (
     AgentConfigResponse,
     AgentStatus
 )
+from app.services.retell.agent import get_retell_agent_service
+
+logger = logging.getLogger(__name__)
 
 class AgentService:
     def __init__(self, supabase: Client):
@@ -13,7 +17,12 @@ class AgentService:
         self.table = "agent_configs"
 
     async def create_agent(self, agent: AgentConfigCreate) -> AgentConfigResponse:
-        """Create a new agent configuration"""
+        """
+        Create a new agent configuration and immediately create corresponding Retell agent
+        
+        This creates both the internal agent configuration and the Retell AI agent,
+        storing the Retell agent ID in the database.
+        """
         data = agent.model_dump()
         
         # Convert Pydantic models to dicts for nested objects
@@ -22,6 +31,25 @@ class AgentService:
         if 'advanced_settings' in data:
             data['advanced_settings'] = agent.advanced_settings.model_dump()
         
+        # Create Retell agent immediately
+        retell_agent_id = None
+        try:
+            logger.info(f"Creating Retell agent for '{agent.name}'")
+            retell_agent_service = get_retell_agent_service()
+            retell_agent_id = retell_agent_service.create_agent_from_config(
+                agent_config=data
+            )
+            logger.info(f"Successfully created Retell agent: {retell_agent_id}")
+        except Exception as e:
+            logger.error(f"Failed to create Retell agent for '{agent.name}': {str(e)}")
+            # Continue with internal agent creation even if Retell agent creation fails
+            # The retell_agent_id will be None and can be created later
+        
+        # Add retell_agent_id to data
+        if retell_agent_id:
+            data['retell_agent_id'] = retell_agent_id
+        
+        # Insert into database
         response = self.supabase.table(self.table).insert(data).execute()
         return AgentConfigResponse(**response.data[0])
     
@@ -68,7 +96,29 @@ class AgentService:
         return None
     
     async def delete_agent(self, agent_id: str) -> bool:
-        """Delete an agent configuration"""
+        """
+        Delete an agent configuration and corresponding Retell agent
+        
+        This deletes both the internal agent configuration and the Retell AI agent
+        if a retell_agent_id exists.
+        """
+        # Get agent first to check for retell_agent_id
+        agent = await self.get_agent(agent_id)
+        if not agent:
+            return False
+        
+        # Delete Retell agent if it exists
+        if agent.retell_agent_id:
+            try:
+                logger.info(f"Deleting Retell agent: {agent.retell_agent_id}")
+                retell_agent_service = get_retell_agent_service()
+                retell_agent_service.delete_agent(agent.retell_agent_id)
+                logger.info(f"Successfully deleted Retell agent: {agent.retell_agent_id}")
+            except Exception as e:
+                logger.error(f"Failed to delete Retell agent {agent.retell_agent_id}: {str(e)}")
+                # Continue with internal agent deletion even if Retell deletion fails
+        
+        # Delete internal agent configuration
         response = self.supabase.table(self.table).delete().eq("id", agent_id).execute()
         return len(response.data) > 0
     

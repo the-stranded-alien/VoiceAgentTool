@@ -40,20 +40,26 @@ class ConversationContext:
         self,
         call_id: str,
         scenario: str,
-        driver_name: str,
-        load_number: str,
+        driver_name: Optional[str],
+        load_number: Optional[str],
         phone_number: str,
-        expected_route: Optional[Dict[str, Any]] = None
+        expected_route: Optional[Dict[str, Any]] = None,
+        retell_call_id: Optional[str] = None,
+        agent_config_id: Optional[str] = None
     ):
         self.call_id = call_id
         self.scenario = scenario  # check_in, emergency, delivery, custom
-        self.driver_name = driver_name
-        self.load_number = load_number
+        self.driver_name = driver_name  # Can be None for test calls
+        self.load_number = load_number  # Can be None for test calls
         self.phone_number = phone_number
 
         # Expected route for location conflict detection
         # Format: {"origin": "Barstow, CA", "destination": "Phoenix, AZ", "waypoints": ["Needles, CA", "Kingman, AZ"]}
         self.expected_route = expected_route or {}
+        
+        # Retell call metadata
+        self.retell_call_id = retell_call_id
+        self.agent_config_id = agent_config_id
 
         # Conversation tracking
         self.conversation_history: List[ConversationTurn] = []
@@ -236,10 +242,12 @@ class ContextManager:
         self,
         call_id: str,
         scenario: str,
-        driver_name: str,
-        load_number: str,
+        driver_name: Optional[str],
+        load_number: Optional[str],
         phone_number: str,
-        expected_route: Optional[Dict[str, Any]] = None
+        expected_route: Optional[Dict[str, Any]] = None,
+        retell_call_id: Optional[str] = None,
+        agent_config_id: Optional[str] = None
     ) -> ConversationContext:
         """Create new conversation context"""
         context = ConversationContext(
@@ -248,7 +256,9 @@ class ContextManager:
             driver_name=driver_name,
             load_number=load_number,
             phone_number=phone_number,
-            expected_route=expected_route
+            expected_route=expected_route,
+            retell_call_id=retell_call_id,
+            agent_config_id=agent_config_id
         )
         self._contexts[call_id] = context
         return context

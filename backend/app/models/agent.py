@@ -50,10 +50,12 @@ class AgentConfigUpdate(BaseModel):
     voice_settings: Optional[VoiceSettings] = None
     advanced_settings: Optional[AdvancedSettings] = None
     status: Optional[AgentStatus] = None
+    retell_agent_id: Optional[str] = None
 
 class AgentConfigResponse(AgentConfigBase):
     id: str
     status: AgentStatus
+    retell_agent_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

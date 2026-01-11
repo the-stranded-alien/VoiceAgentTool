@@ -152,11 +152,11 @@ async def initiate_call(
         if not agent:
             raise HTTPException(status_code=404, detail="Agent not found")
         
-        # Ensure agent has Retell agent ID
+        # Ensure agent has Retell agent ID (fallback for agents created before immediate creation was implemented)
         retell_agent_id = agent.retell_agent_id
         if not retell_agent_id:
-            # Create Retell agent
-            logger.info(f"Creating Retell agent for {agent.name}")
+            # Create Retell agent as fallback (should rarely happen now)
+            logger.warning(f"Agent {agent.name} missing retell_agent_id, creating now (fallback)")
             retell_agent_service = get_retell_agent_service()
             retell_agent_id = retell_agent_service.create_agent_from_config(
                 agent_config=agent.dict()

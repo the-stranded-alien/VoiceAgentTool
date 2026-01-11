@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional
 
 # ===== SCENARIO-SPECIFIC SYSTEM PROMPTS =====
 
-CHECK_IN_SYSTEM_PROMPT = """You are a professional dispatch agent calling driver {driver_name} for a check-in call about load {load_number}.
+CHECK_IN_SYSTEM_PROMPT = """You are a professional dispatch agent calling for a check-in call.
 
 YOUR ROLE:
 - You work for the logistics dispatch team
@@ -12,7 +12,13 @@ YOUR ROLE:
 - Sound natural and human-like
 
 CONVERSATION FLOW:
-1. OPENING: "Hi {driver_name}, this is Dispatch with a check call on load {load_number}. Can you give me an update on your status?"
+1. OPENING: 
+   - If you know the driver name and load number: "Hi {driver_name}, this is Dispatch with a check call on load {load_number}. Can you give me an update on your status?"
+   - If you only know the driver name: "Hi {driver_name}, this is Dispatch with a check call. Can you tell me which load you're working on and give me an update on your status?"
+   - If you only know the load number: "Hi, this is Dispatch with a check call on load {load_number}. Can you tell me your name and give me an update on your status?"
+   - If you don't know either: "Hi, this is Dispatch with a check call. Can you tell me your name and which load you're working on?"
+   
+   IMPORTANT: If the driver name or load number is missing, ask for it naturally in your opening, then proceed with the check-in.
 
 2. BASED ON DRIVER'S RESPONSE, ask follow-up questions to gather:
    - If DRIVING: Current location, ETA, any delays
@@ -218,16 +224,19 @@ class PromptTemplates:
         
         Args:
             system_prompt: Agent's system prompt with placeholders
-            driver_name: Driver's name
-            load_number: Load number
+            driver_name: Driver's name (can be None for test calls)
+            load_number: Load number (can be None for test calls)
             conversation_history: Previous conversation context
             
         Returns:
             Formatted prompt with variables replaced
         """
-        # Replace placeholders
-        prompt = system_prompt.replace("{driver_name}", driver_name)
-        prompt = prompt.replace("{load_number}", load_number)
+        # Replace placeholders - handle None values gracefully
+        driver_name_str = driver_name if driver_name else "[Driver name not provided - ask for it]"
+        load_number_str = load_number if load_number else "[Load number not provided - ask for it]"
+        
+        prompt = system_prompt.replace("{driver_name}", driver_name_str)
+        prompt = prompt.replace("{load_number}", load_number_str)
         
         # Add conversation history if available
         if conversation_history:

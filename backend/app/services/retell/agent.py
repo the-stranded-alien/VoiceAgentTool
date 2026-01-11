@@ -33,6 +33,10 @@ class RetellAgentService:
             
             # Map voice settings to Retell SDK parameters
             voice_id = voice_settings.get("voice_id", "11labs-Adrian")
+            # Map "default" to a valid Retell voice ID
+            if voice_id == "default":
+                voice_id = "11labs-Adrian"
+            
             responsiveness = voice_settings.get("responsiveness", 0.8)
             interruption_sensitivity = voice_settings.get("interruption_sensitivity", 0.7)
             
@@ -63,7 +67,8 @@ class RetellAgentService:
             language = voice_settings.get("language", "en-US")
             
             # LLM Websocket URL for custom LLM integration
-            llm_websocket_url = f"{settings.server_url}/api/v1/webhooks/retell/llm-ws"
+            # WebSocket routes are mounted at /ws prefix (see main.py)
+            llm_websocket_url = f"{settings.server_url}/ws/llm"
             
             # Create agent using SDK
             agent = self.client.create_agent(

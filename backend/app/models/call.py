@@ -11,7 +11,7 @@ class CallStatus(str, Enum):
     ESCALATED = "escalated"
 
 class CallCreate(BaseModel):
-    agent_config_id: str
+    agent_config_id: Optional[str] = None  # Optional for Retell UI test calls
     driver_name: str
     driver_phone: Optional[str] = None
     phone_number: Optional[str] = Field(default=None, exclude=True)  # Frontend field, not in DB
