@@ -150,8 +150,10 @@ class RealtimeLLMHandler:
 
         # Check for emergency trigger (immediate switch)
         if not context.is_emergency and self.detect_emergency(user_utterance):
-            logger.info(f"Emergency detected in call {context.call_id}")
+            logger.info(f"Emergency detected in call {context.call_id} - switching to emergency protocol")
             context.switch_to_emergency()
+            # Set call_outcome immediately
+            context.update_extracted_data("call_outcome", "Emergency Escalation")
             response = self._generate_emergency_acknowledgment()
             context.add_turn(TurnRole.AGENT, response)
             return response, False
@@ -173,6 +175,13 @@ class RealtimeLLMHandler:
         should_end = self._should_end_conversation(context)
         if should_end:
             context.mark_for_end("conversation_complete")
+            # For emergency calls, replace response with escalation message
+            if context.is_emergency:
+                escalation_msg = self.generate_final_response(context)
+                # Replace the last agent turn with escalation message
+                if context.conversation_history:
+                    context.conversation_history[-1].content = escalation_msg
+                return escalation_msg, True
 
         return response, should_end
 
@@ -320,19 +329,20 @@ class RealtimeLLMHandler:
         """
         if context.is_emergency:
             missing = []
+            # Priority order: safety first, then location, then type, then load security, then injury details
             if not context.extracted_data.get("safety_status"):
-                missing.append("safety status")
-            if not context.extracted_data.get("injury_status"):
-                missing.append("injury status")
+                missing.append("safety status (is everyone safe?)")
             if not context.extracted_data.get("emergency_location"):
                 missing.append("exact location")
             if not context.extracted_data.get("emergency_type"):
-                missing.append("emergency type")
+                missing.append("emergency type (accident, breakdown, medical, other)")
             if not context.extracted_data.get("load_secure"):
-                missing.append("load security")
+                missing.append("load security (is the load secure?)")
+            if not context.extracted_data.get("injury_status"):
+                missing.append("injury status")
 
             if missing:
-                return f"Still need to ask about: {', '.join(missing)}"
+                return f"CRITICAL: Still need to ask about: {', '.join(missing[:3])}"  # Limit to top 3 priorities
 
         elif context.scenario == "check_in":
             driver_status = context.extracted_data.get("driver_status")
@@ -480,25 +490,39 @@ class RealtimeLLMHandler:
         """
         # Emergency calls end after gathering critical info
         if context.is_emergency:
-            # Required emergency fields
-            critical_fields = [
-                "emergency_type",
-                "safety_status",
-                "injury_status",
-                "emergency_location",
-                "load_secure"
-            ]
-            # Check if we have most critical info (safety + location minimum)
-            has_safety = context.extracted_data.get("safety_status") is not None
-            has_location = context.extracted_data.get("emergency_location") is not None
+            # Required emergency fields per problem statement:
+            # - emergency_type: "Accident" OR "Breakdown" OR "Medical" OR "Other"
+            # - safety_status: (e.g., "Driver confirmed everyone is safe")
+            # - injury_status: (e.g., "No injuries reported")
+            # - emergency_location: (e.g., "I-15 North, Mile Marker 123")
+            # - load_secure: true OR false
+            # - escalation_status: "Connected to Human Dispatcher"
+            
             has_type = context.extracted_data.get("emergency_type") is not None
+            has_safety = context.extracted_data.get("safety_status") is not None
+            has_injury = context.extracted_data.get("injury_status") is not None
+            has_location = context.extracted_data.get("emergency_location") is not None
+            has_load_secure = context.extracted_data.get("load_secure") is not None
 
-            # End if we have safety status, location, and type (minimum for escalation)
-            if has_safety and has_location and has_type:
+            # End if we have all critical emergency information
+            # Minimum required: type, safety, location, and load_secure
+            if has_type and has_safety and has_location and has_load_secure:
+                # Set escalation status before ending
+                context.update_extracted_data("escalation_status", "Connected to Human Dispatcher")
+                context.update_extracted_data("call_outcome", "Emergency Escalation")
                 return True
 
             # Also end if too many turns in emergency (shouldn't take long)
+            # But still try to get minimum info (type, safety, location)
             if context.turn_count > 12:  # ~6 exchanges
+                # If we have minimum critical info, end the call
+                if has_type and has_safety and has_location:
+                    context.update_extracted_data("escalation_status", "Connected to Human Dispatcher")
+                    context.update_extracted_data("call_outcome", "Emergency Escalation")
+                    return True
+                # Otherwise, end anyway but mark as incomplete
+                context.update_extracted_data("escalation_status", "Connected to Human Dispatcher")
+                context.update_extracted_data("call_outcome", "Emergency Escalation")
                 return True
 
         # Normal check-in calls
@@ -548,6 +572,7 @@ class RealtimeLLMHandler:
             Final closing statement
         """
         if context.is_emergency:
+            # Per problem statement: "I'm connecting you to a human dispatcher now."
             return "I'm connecting you to a human dispatcher now who will coordinate help."
         elif context.end_call_reason == "unresponsive_driver":
             return "I'll let you go for now. Please call dispatch back when you have a moment. Drive safe!"
@@ -555,7 +580,11 @@ class RealtimeLLMHandler:
             return "I'm having trouble hearing you. A dispatcher will call you back shortly."
         else:
             # Normal completion
-            return f"Perfect. Thanks for the update, {context.driver_name}. Drive safe!"
+            driver_name = context.driver_name if context.driver_name else ""
+            if driver_name:
+                return f"Perfect. Thanks for the update, {driver_name}. Drive safe!"
+            else:
+                return "Perfect. Thanks for the update. Drive safe!"
 
 
 # Global instance

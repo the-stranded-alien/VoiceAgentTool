@@ -39,7 +39,7 @@ class AgentConfigBase(BaseModel):
     advanced_settings: AdvancedSettings = AdvancedSettings()
 
 class AgentConfigCreate(AgentConfigBase):
-    pass
+    status: AgentStatus = AgentStatus.ACTIVE
 
 class AgentConfigUpdate(BaseModel):
     name: Optional[str] = None

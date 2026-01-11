@@ -330,6 +330,29 @@ class RetellWebSocketHandler:
                 "status": "in_progress"
             }).eq("id", internal_call_id).execute()
 
+            # Create call_started event (only if not already created by webhook)
+            try:
+                from app.services.call_service import CallService
+                from app.models.call import CallEventCreate
+                call_service = CallService(supabase)
+                # Check if call_started event already exists
+                existing_events = await call_service.get_call_events(internal_call_id)
+                has_started_event = any(e.get("event_type") == "call_started" for e in existing_events)
+                
+                if not has_started_event:
+                    await call_service.create_call_event(
+                        CallEventCreate(
+                            call_id=internal_call_id,
+                            event_type="call_started",
+                            event_data={
+                                "retell_call_id": retell_call_id,
+                                "triggered_by": "websocket_connection"
+                            }
+                        )
+                    )
+            except Exception as e:
+                logger.error(f"Error creating call_started event: {e}")
+
             # Get expected route for location conflict detection
             from app.services.llm.realtime import get_route_for_load
             expected_route = get_route_for_load(load_number)
@@ -403,10 +426,32 @@ class RetellWebSocketHandler:
             confidence=None
         )
 
-        # If should end, generate final response
-        if should_end:
+        # If should end and not already handled in generate_response
+        if should_end and not context.is_emergency:
             final_response = self.realtime_handler.generate_final_response(context)
             agent_response = final_response
+        elif should_end and context.is_emergency:
+            # Emergency escalation message already set in generate_response
+            pass
+
+        # Log emergency detection for call events
+        if context.is_emergency and not hasattr(context, '_emergency_event_logged'):
+            try:
+                from app.database import get_supabase
+                from app.services.call_service import CallService
+                from app.models.call import CallEventCreate
+                supabase = get_supabase()
+                call_service = CallService(supabase)
+                await call_service.create_call_event(
+                    CallEventCreate(
+                        call_id=context.call_id,
+                        event_type="emergency_detected",
+                        event_data={"triggered_at_turn": context.emergency_triggered_at}
+                    )
+                )
+                context._emergency_event_logged = True
+            except Exception as e:
+                logger.error(f"Error creating emergency event: {e}")
 
         return {
             "response_type": "response",
@@ -481,25 +526,67 @@ class RetellWebSocketHandler:
             transcript = "\n\n".join(transcript_lines)
 
             # Get extracted data and determine success
-            structured_data = context.extracted_data
-            call_outcome = structured_data.get("call_outcome", "Completed")
+            structured_data = context.extracted_data.copy()  # Make a copy to avoid modifying context
             
-            # Determine if call was successful based on extracted data
-            # Check if all required fields are present
-            required_fields = ["call_outcome", "driver_status"]
-            has_required_data = all(field in structured_data and structured_data[field] for field in required_fields)
-            
-            # Determine final status
+            # For emergency calls, ensure all required fields are present and properly formatted
             if context.is_emergency:
+                # Ensure call_outcome is set
+                if "call_outcome" not in structured_data or structured_data["call_outcome"] != "Emergency Escalation":
+                    structured_data["call_outcome"] = "Emergency Escalation"
+                
+                # Ensure escalation_status is set
+                if "escalation_status" not in structured_data:
+                    structured_data["escalation_status"] = "Connected to Human Dispatcher"
+                
+                # Extract final structured data from full transcript using emergency schema
+                from app.services.llm.extractor import get_extractor
+                extractor = get_extractor()
+                try:
+                    final_extracted = await extractor.extract_from_transcript(
+                        transcript=transcript,
+                        scenario_type="emergency",
+                        driver_name=context.driver_name,
+                        load_number=context.load_number
+                    )
+                    # Merge final extraction with incremental data (final takes precedence)
+                    structured_data.update(final_extracted)
+                except Exception as e:
+                    logger.error(f"Error in final emergency extraction: {e}")
+                
+                call_outcome = structured_data.get("call_outcome", "Emergency Escalation")
                 status = CallStatus.ESCALATED
-            elif context.end_call_reason in ["unresponsive_driver", "poor_connection"]:
-                status = CallStatus.FAILED
-            elif has_required_data and call_outcome in ["Completed", "Successful"]:
-                status = CallStatus.COMPLETED
-            elif transcript:
-                status = CallStatus.COMPLETED  # If we have transcript, consider it completed
             else:
-                status = CallStatus.FAILED
+                # For non-emergency calls, extract final structured data
+                from app.services.llm.extractor import get_extractor
+                extractor = get_extractor()
+                try:
+                    final_extracted = await extractor.extract_from_transcript(
+                        transcript=transcript,
+                        scenario_type=context.scenario,
+                        driver_name=context.driver_name,
+                        load_number=context.load_number
+                    )
+                    # Merge final extraction with incremental data
+                    structured_data.update(final_extracted)
+                except Exception as e:
+                    logger.error(f"Error in final extraction: {e}")
+                
+                call_outcome = structured_data.get("call_outcome", "Completed")
+                
+                # Determine if call was successful based on extracted data
+                # Check if all required fields are present
+                required_fields = ["call_outcome", "driver_status"]
+                has_required_data = all(field in structured_data and structured_data[field] for field in required_fields)
+                
+                # Determine final status
+                if context.end_call_reason in ["unresponsive_driver", "poor_connection"]:
+                    status = CallStatus.FAILED
+                elif has_required_data and call_outcome in ["Completed", "Successful", "In-Transit Update", "Arrival Confirmation"]:
+                    status = CallStatus.COMPLETED
+                elif transcript:
+                    status = CallStatus.COMPLETED  # If we have transcript, consider it completed
+                else:
+                    status = CallStatus.FAILED
 
             # Calculate call duration (rough estimate from turn count)
             call_duration = len(context.conversation_history) * 5  # Rough estimate: 5 seconds per turn
@@ -507,6 +594,7 @@ class RetellWebSocketHandler:
             # Get services
             supabase = get_supabase()
             call_service = CallService(supabase)
+            from app.models.call import CallEventCreate
 
             # Update existing call record
             existing_call = await call_service.get_call(call_id)
@@ -524,6 +612,24 @@ class RetellWebSocketHandler:
                         completed_at=datetime.now()
                     )
                 )
+                
+                # Create call_completed event
+                try:
+                    await call_service.create_call_event(
+                        CallEventCreate(
+                            call_id=call_id,
+                            event_type="call_completed",
+                            event_data={
+                                "status": status.value if hasattr(status, 'value') else str(status),
+                                "call_outcome": call_outcome,
+                                "duration_seconds": call_duration,
+                                "is_emergency": context.is_emergency,
+                                "end_call_reason": context.end_call_reason
+                            }
+                        )
+                    )
+                except Exception as e:
+                    logger.error(f"Error creating call_completed event: {e}")
             else:
                 logger.error(f"Call record {call_id} not found, cannot update")
 

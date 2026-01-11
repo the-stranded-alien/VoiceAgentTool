@@ -23,13 +23,20 @@ class AgentService:
         This creates both the internal agent configuration and the Retell AI agent,
         storing the Retell agent ID in the database.
         """
-        data = agent.model_dump()
+        data = agent.model_dump(mode='json')
+        
+        # Ensure status is set (defaults to ACTIVE if not provided)
+        if 'status' not in data or not data['status']:
+            data['status'] = AgentStatus.ACTIVE.value
+        # Convert enum to string value if it's still an enum
+        elif hasattr(data['status'], 'value'):
+            data['status'] = data['status'].value
         
         # Convert Pydantic models to dicts for nested objects
         if 'voice_settings' in data:
-            data['voice_settings'] = agent.voice_settings.model_dump()
+            data['voice_settings'] = agent.voice_settings.model_dump(mode='json')
         if 'advanced_settings' in data:
-            data['advanced_settings'] = agent.advanced_settings.model_dump()
+            data['advanced_settings'] = agent.advanced_settings.model_dump(mode='json')
         
         # Create Retell agent immediately
         retell_agent_id = None
@@ -82,13 +89,19 @@ class AgentService:
         agent_update: AgentConfigUpdate
     ) -> Optional[AgentConfigResponse]:
         """Update an agent configuration"""
-        data = agent_update.model_dump(exclude_unset=True)
+        data = agent_update.model_dump(exclude_unset=True, mode='json')
+        
+        # Ensure status is properly converted if provided
+        if 'status' in data and data['status']:
+            # Convert enum to string value if it's an enum
+            if hasattr(data['status'], 'value'):
+                data['status'] = data['status'].value
         
         # Convert Pydantic models to dicts for nested objects
         if 'voice_settings' in data and data['voice_settings']:
-            data['voice_settings'] = agent_update.voice_settings.model_dump()
+            data['voice_settings'] = agent_update.voice_settings.model_dump(mode='json')
         if 'advanced_settings' in data and data['advanced_settings']:
-            data['advanced_settings'] = agent_update.advanced_settings.model_dump()
+            data['advanced_settings'] = agent_update.advanced_settings.model_dump(mode='json')
         
         response = self.supabase.table(self.table).update(data).eq("id", agent_id).execute()
         if response.data:

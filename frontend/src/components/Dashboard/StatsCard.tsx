@@ -60,17 +60,6 @@ export const StatsCard: React.FC<StatsCardProps> = ({
         <div className="flex-1">
           <p className="text-sm font-medium text-gray-600 mb-1">{title}</p>
           <p className="text-3xl font-bold text-gray-900 mb-2">{value}</p>
-          {trend && (
-            <div
-              className={`flex items-center text-sm font-medium ${
-                trend.isPositive ? 'text-green-600' : 'text-red-600'
-              }`}
-            >
-              <span>{trend.isPositive ? '↑' : '↓'}</span>
-              <span className="ml-1">{Math.abs(trend.value)}%</span>
-              <span className="ml-1 text-gray-500">vs last week</span>
-            </div>
-          )}
         </div>
         <div
           className={`w-16 h-16 rounded-xl bg-gradient-to-br ${colors.gradient} flex items-center justify-center shadow-lg`}
