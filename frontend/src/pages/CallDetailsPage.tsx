@@ -1,13 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Phone, Clock, User, Package, MessageSquare, Calendar, CheckCircle } from 'lucide-react';
-import type { Call } from '../types/index';
+import { ArrowLeft, Clock, User, Package, MessageSquare, Calendar, CheckCircle, AlertTriangle, MapPin, Truck } from 'lucide-react';
+import type { Call, StructuredData, CheckInStructuredData, EmergencyStructuredData, DeliveryStructuredData } from '../types/index';
 import { api } from '../services/api';
 import { Card } from '../components/common/Card';
 import { Button } from '../components/common/Button';
 import { Badge } from '../components/common/Badge';
 import { Loading } from '../components/common/Loading';
 import { formatDateTime, formatDuration, formatPhoneNumber } from '../utils/formatters';
+
+// Helper to determine if data is emergency type
+const isEmergencyData = (data: StructuredData): data is EmergencyStructuredData => {
+  return data?.call_outcome === 'Emergency Escalation' || 'emergency_type' in data;
+};
+
+// Helper to determine if data is check-in type
+const isCheckInData = (data: StructuredData): data is CheckInStructuredData => {
+  return 'driver_status' in data || data?.call_outcome === 'In-Transit Update' || data?.call_outcome === 'Arrival Confirmation';
+};
+
+// Helper to determine if data is delivery type
+const isDeliveryData = (data: StructuredData): data is DeliveryStructuredData => {
+  return 'pod_received' in data || data?.call_outcome === 'Delivery Confirmed' || data?.call_outcome === 'Delivery Issues';
+};
+
+// Get outcome badge variant
+const getOutcomeBadgeVariant = (outcome?: string): 'success' | 'error' | 'warning' | 'info' => {
+  if (!outcome) return 'info';
+  if (outcome === 'Emergency Escalation') return 'error';
+  if (outcome.includes('Confirmation') || outcome.includes('Confirmed')) return 'success';
+  if (outcome.includes('Issues') || outcome.includes('Delayed')) return 'warning';
+  return 'info';
+};
 
 export const CallDetailsPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -102,36 +126,199 @@ export const CallDetailsPage: React.FC = () => {
 
           {call.structured_data && (
             <Card>
-              <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center gap-2">
-                <CheckCircle className="w-5 h-5 text-green-600" />
+              {/* Call Outcome Header */}
+              {call.structured_data.call_outcome && (
+                <div className="mb-6 pb-4 border-b border-gray-200">
+                  <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-semibold text-gray-900 flex items-center gap-2">
+                      {isEmergencyData(call.structured_data) ? (
+                        <AlertTriangle className="w-5 h-5 text-red-600" />
+                      ) : (
+                        <CheckCircle className="w-5 h-5 text-green-600" />
+                      )}
+                      Call Outcome
+                    </h2>
+                    <Badge variant={getOutcomeBadgeVariant(call.structured_data.call_outcome)} size="lg">
+                      {call.structured_data.call_outcome}
+                    </Badge>
+                  </div>
+                </div>
+              )}
+
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">
                 Collected Information
-              </h2>
-              <div className="space-y-4">
-                {call.structured_data.location && (
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Location</p>
-                    <p className="text-lg font-medium text-gray-900">{call.structured_data.location}</p>
+              </h3>
+
+              {/* Emergency Data Display */}
+              {isEmergencyData(call.structured_data) && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    {call.structured_data.emergency_type && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Emergency Type</p>
+                        <Badge variant="error">{call.structured_data.emergency_type}</Badge>
+                      </div>
+                    )}
+                    {call.structured_data.safety_status && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Safety Status</p>
+                        <p className="text-lg font-medium text-gray-900">{call.structured_data.safety_status}</p>
+                      </div>
+                    )}
                   </div>
-                )}
-                {call.structured_data.eta && (
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">ETA</p>
-                    <p className="text-lg font-medium text-gray-900">{call.structured_data.eta}</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {call.structured_data.injury_status && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Injury Status</p>
+                        <p className="text-lg font-medium text-gray-900">{call.structured_data.injury_status}</p>
+                      </div>
+                    )}
+                    {call.structured_data.emergency_location && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Emergency Location</p>
+                        <p className="text-lg font-medium text-gray-900 flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-red-600" />
+                          {call.structured_data.emergency_location}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
-                {call.structured_data.reason && (
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Reason</p>
-                    <p className="text-lg font-medium text-gray-900">{call.structured_data.reason}</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    {call.structured_data.load_secure !== undefined && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Load Secure</p>
+                        <Badge variant={call.structured_data.load_secure ? 'success' : 'warning'}>
+                          {call.structured_data.load_secure ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                    )}
+                    {call.structured_data.escalation_status && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Escalation Status</p>
+                        <Badge variant="info">{call.structured_data.escalation_status}</Badge>
+                      </div>
+                    )}
                   </div>
-                )}
-                {call.structured_data.additional_info && (
-                  <div>
-                    <p className="text-sm text-gray-500 mb-1">Additional Information</p>
-                    <p className="text-lg font-medium text-gray-900">{call.structured_data.additional_info}</p>
+                </div>
+              )}
+
+              {/* Check-In Data Display */}
+              {isCheckInData(call.structured_data) && !isEmergencyData(call.structured_data) && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    {call.structured_data.driver_status && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Driver Status</p>
+                        <Badge
+                          variant={
+                            call.structured_data.driver_status === 'Delayed' ? 'warning' :
+                            call.structured_data.driver_status === 'Arrived' || call.structured_data.driver_status === 'Unloading' ? 'success' :
+                            'info'
+                          }
+                        >
+                          <Truck className="w-3 h-3" />
+                          {call.structured_data.driver_status}
+                        </Badge>
+                      </div>
+                    )}
+                    {call.structured_data.current_location && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Current Location</p>
+                        <p className="text-lg font-medium text-gray-900 flex items-center gap-2">
+                          <MapPin className="w-4 h-4 text-purple-600" />
+                          {call.structured_data.current_location}
+                        </p>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {call.structured_data.eta && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">ETA</p>
+                        <p className="text-lg font-medium text-gray-900 flex items-center gap-2">
+                          <Clock className="w-4 h-4 text-purple-600" />
+                          {call.structured_data.eta}
+                        </p>
+                      </div>
+                    )}
+                    {call.structured_data.delay_reason && call.structured_data.delay_reason !== 'None' && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Delay Reason</p>
+                        <Badge variant="warning">{call.structured_data.delay_reason}</Badge>
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {call.structured_data.unloading_status && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Unloading Status</p>
+                        <p className="text-lg font-medium text-gray-900">{call.structured_data.unloading_status}</p>
+                      </div>
+                    )}
+                    {call.structured_data.pod_reminder_acknowledged !== undefined && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">POD Reminder Acknowledged</p>
+                        <Badge variant={call.structured_data.pod_reminder_acknowledged ? 'success' : 'warning'}>
+                          {call.structured_data.pod_reminder_acknowledged ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Delivery Data Display */}
+              {isDeliveryData(call.structured_data) && !isEmergencyData(call.structured_data) && !isCheckInData(call.structured_data) && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    {call.structured_data.delivery_time && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Delivery Time</p>
+                        <p className="text-lg font-medium text-gray-900">{call.structured_data.delivery_time}</p>
+                      </div>
+                    )}
+                    {call.structured_data.pod_received !== undefined && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">POD Received</p>
+                        <Badge variant={call.structured_data.pod_received ? 'success' : 'warning'}>
+                          {call.structured_data.pod_received ? 'Yes' : 'No'}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    {call.structured_data.pod_number && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">POD Number</p>
+                        <p className="text-lg font-medium text-gray-900">{call.structured_data.pod_number}</p>
+                      </div>
+                    )}
+                    {call.structured_data.delivery_issues && (
+                      <div>
+                        <p className="text-sm text-gray-500 mb-1">Delivery Issues</p>
+                        <p className="text-lg font-medium text-gray-900">{call.structured_data.delivery_issues}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Fallback: Generic key-value display for unknown schemas */}
+              {!isEmergencyData(call.structured_data) && !isCheckInData(call.structured_data) && !isDeliveryData(call.structured_data) && (
+                <div className="space-y-3">
+                  {Object.entries(call.structured_data).map(([key, value]) => {
+                    if (value === null || value === undefined || key === 'call_outcome') return null;
+                    return (
+                      <div key={key}>
+                        <p className="text-sm text-gray-500 mb-1 capitalize">{key.replace(/_/g, ' ')}</p>
+                        <p className="text-lg font-medium text-gray-900">
+                          {typeof value === 'boolean' ? (value ? 'Yes' : 'No') : String(value)}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </Card>
           )}
 
@@ -165,8 +352,8 @@ export const CallDetailsPage: React.FC = () => {
             <div className="space-y-4">
               <div>
                 <p className="text-sm text-gray-500 mb-2">Current Status</p>
-                <Badge color="blue" className="text-base">
-                  {call.status}
+                <Badge status={call.status} className="text-base capitalize">
+                  {call.status.replace(/_/g, ' ')}
                 </Badge>
               </div>
               <div className="pt-4 border-t border-gray-200">

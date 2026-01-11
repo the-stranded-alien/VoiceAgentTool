@@ -177,7 +177,8 @@ async def initiate_call(
                 call_id=call_id,
                 retell_agent_id=retell_agent_id,
                 driver_name=call.driver_name,
-                load_number=call.load_number
+                load_number=call.load_number,
+                scenario=agent.scenario_type
             )
             
             return {
@@ -196,7 +197,8 @@ async def initiate_call(
                 retell_agent_id=retell_agent_id,
                 driver_phone=call.driver_phone,
                 driver_name=call.driver_name,
-                load_number=call.load_number
+                load_number=call.load_number,
+                scenario=agent.scenario_type
             )
             
             return {

@@ -34,17 +34,19 @@ class RetellWebSocketHandler:
         self.context_manager = get_context_manager()
         self.realtime_handler = get_realtime_handler()
 
-    async def handle_connection(self, websocket: WebSocket):
+    async def handle_connection(self, websocket: WebSocket, retell_call_id: str = None):
         """
         Handle WebSocket connection lifecycle
 
         Args:
             websocket: FastAPI WebSocket connection
+            retell_call_id: Optional Retell call ID from URL path
         """
         await websocket.accept()
-        logger.info(f"WebSocket connection established from {websocket.client}")
+        logger.info(f"WebSocket connection established from {websocket.client}, retell_call_id: {retell_call_id}")
 
         call_id = None
+        context_created = False
 
         try:
             while True:
@@ -52,7 +54,17 @@ class RetellWebSocketHandler:
                 data = await websocket.receive_text()
                 message = json.loads(data)
 
-                logger.debug(f"Received from Retell: {message}")
+                logger.debug(f"Received from Retell - interaction_type: {message.get('interaction_type')}")
+
+                # If we have a retell_call_id from URL but no context yet, try to create it
+                # This handles the case where Retell doesn't send call_details first
+                if retell_call_id and not context_created:
+                    active_contexts = self.context_manager.get_all_active_contexts()
+                    if not active_contexts:
+                        call_id = await self._create_context_from_retell_id(retell_call_id)
+                        if call_id:
+                            context_created = True
+                            logger.info(f"Created context for call {call_id} from retell_call_id lookup")
 
                 # Handle different message types
                 response = await self._handle_message(message)
@@ -61,6 +73,7 @@ class RetellWebSocketHandler:
                 if call_id is None and message.get("interaction_type") == "call_details":
                     variables = message.get("retell_llm_dynamic_variables", {})
                     call_id = variables.get("call_id", message.get("call_id"))
+                    context_created = True
                     logger.info(f"Extracted call_id: {call_id}")
 
                 if response:
@@ -79,10 +92,13 @@ class RetellWebSocketHandler:
             logger.error(f"WebSocket error: {e}", exc_info=True)
         finally:
             # Save call data and cleanup context when call ends
+            logger.info(f"Call ending, call_id={call_id}, context_created={context_created}")
             if call_id:
                 await self._save_call_data(call_id)
                 self.context_manager.remove_context(call_id)
-                logger.info(f"Cleaned up context for call {call_id}")
+                logger.info(f"Saved and cleaned up context for call {call_id}")
+            else:
+                logger.warning("No call_id available, cannot save call data")
 
     async def _handle_message(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -131,41 +147,60 @@ class RetellWebSocketHandler:
             }
         }
         """
-        logger.info("Handling call_details message")
+        try:
+            logger.info(f"Handling call_details message: {message}")
 
-        retell_call_id = message.get("call_id")
-        variables = message.get("retell_llm_dynamic_variables", {})
+            retell_call_id = message.get("call_id")
+            variables = message.get("retell_llm_dynamic_variables", {})
 
-        # Extract call info
-        internal_call_id = variables.get("call_id", retell_call_id)
-        driver_name = variables.get("driver_name", "Driver")
-        load_number = variables.get("load_number", "Unknown")
-        phone_number = variables.get("phone_number", "Unknown")
-        scenario = variables.get("scenario", "check_in")
+            logger.info(f"Dynamic variables received: {variables}")
 
-        logger.info(f"Call details - ID: {internal_call_id}, Driver: {driver_name}, Load: {load_number}, Scenario: {scenario}")
+            # Extract call info
+            internal_call_id = variables.get("call_id", retell_call_id)
+            driver_name = variables.get("driver_name", "Driver")
+            load_number = variables.get("load_number", "Unknown")
+            phone_number = variables.get("phone_number", "Unknown")
+            scenario = variables.get("scenario", "check_in")
 
-        # Create conversation context
-        context = self.context_manager.create_context(
-            call_id=internal_call_id,
-            scenario=scenario,
-            driver_name=driver_name,
-            load_number=load_number,
-            phone_number=phone_number
-        )
+            logger.info(f"Call details - ID: {internal_call_id}, Driver: {driver_name}, Load: {load_number}, Scenario: {scenario}")
 
-        # Generate opening greeting
-        opening_message = self._generate_opening(context)
-        context.add_turn(TurnRole.AGENT, opening_message)
+            # Get expected route for location conflict detection
+            from app.services.llm.realtime import get_route_for_load
+            expected_route = get_route_for_load(load_number)
 
-        # Return first response
-        return {
-            "response_type": "response",
-            "response_id": 0,
-            "content": opening_message,
-            "content_complete": True,
-            "end_call": False
-        }
+            # Create conversation context
+            context = self.context_manager.create_context(
+                call_id=internal_call_id,
+                scenario=scenario,
+                driver_name=driver_name,
+                load_number=load_number,
+                phone_number=phone_number,
+                expected_route=expected_route
+            )
+
+            logger.info(f"Created context for call {internal_call_id}, active contexts: {self.context_manager.get_all_active_contexts()}")
+
+            # Generate opening greeting
+            opening_message = self._generate_opening(context)
+            context.add_turn(TurnRole.AGENT, opening_message)
+
+            # Return first response
+            return {
+                "response_type": "response",
+                "response_id": 0,
+                "content": opening_message,
+                "content_complete": True,
+                "end_call": False
+            }
+        except Exception as e:
+            logger.error(f"Error in _handle_call_details: {e}", exc_info=True)
+            return {
+                "response_type": "response",
+                "response_id": 0,
+                "content": "I'm having technical difficulties. Let me have a dispatcher call you back.",
+                "content_complete": True,
+                "end_call": True
+            }
 
     def _generate_opening(self, context) -> str:
         """Generate opening greeting based on scenario"""
@@ -173,6 +208,90 @@ class RetellWebSocketHandler:
             return f"This is Dispatch calling about an emergency. {context.driver_name}, are you able to talk?"
         else:
             return f"Hi {context.driver_name}, this is Dispatch with a check call on load {context.load_number}. Can you give me an update on your status?"
+
+    async def _create_context_from_retell_id(self, retell_call_id: str) -> str:
+        """
+        Create conversation context by looking up our call from Retell call ID
+
+        This is used when Retell doesn't send call_details message first.
+        We look up the call in our database using the Retell call ID.
+        If not found by retell_call_id, falls back to most recent in_progress call.
+
+        Args:
+            retell_call_id: The Retell call ID from the URL path
+
+        Returns:
+            Internal call ID if context was created, None otherwise
+        """
+        try:
+            supabase = get_supabase()
+
+            # First try to find by retell_call_id
+            result = supabase.table("calls").select(
+                "id, driver_name, driver_phone, load_number, agent_config_id, agent_configs(scenario_type)"
+            ).eq("retell_call_id", retell_call_id).execute()
+
+            # If not found, fall back to most recent in_progress or initiated call
+            # This handles the race condition where Retell connects before DB update
+            if not result.data or len(result.data) == 0:
+                logger.info(f"No call found by retell_call_id, falling back to most recent active call")
+                result = supabase.table("calls").select(
+                    "id, driver_name, driver_phone, load_number, agent_config_id, agent_configs(scenario_type)"
+                ).in_("status", ["in_progress", "initiated"]).order("created_at", desc=True).limit(1).execute()
+
+                # Update this call with the retell_call_id for future lookups
+                if result.data and len(result.data) > 0:
+                    call_id = result.data[0]["id"]
+                    supabase.table("calls").update({
+                        "retell_call_id": retell_call_id,
+                        "status": "in_progress"
+                    }).eq("id", call_id).execute()
+                    logger.info(f"Updated call {call_id} with retell_call_id {retell_call_id}")
+
+            if not result.data or len(result.data) == 0:
+                logger.error(f"No active call found for retell_call_id: {retell_call_id}")
+                return None
+
+            call_data = result.data[0]
+            internal_call_id = call_data["id"]
+            driver_name = call_data.get("driver_name", "Driver")
+            load_number = call_data.get("load_number", "Unknown")
+            phone_number = call_data.get("driver_phone", "Unknown")
+
+            # Get scenario from agent_config
+            agent_config = call_data.get("agent_configs")
+            scenario = agent_config.get("scenario_type", "check_in") if agent_config else "check_in"
+
+            logger.info(f"Found call: id={internal_call_id}, driver={driver_name}, scenario={scenario}")
+            logger.info(f"Found call from retell_call_id: {internal_call_id}, driver={driver_name}, scenario={scenario}")
+
+            # Get expected route for location conflict detection
+            from app.services.llm.realtime import get_route_for_load
+            expected_route = get_route_for_load(load_number)
+
+            # Create conversation context
+            context = self.context_manager.create_context(
+                call_id=internal_call_id,
+                scenario=scenario,
+                driver_name=driver_name,
+                load_number=load_number,
+                phone_number=phone_number,
+                expected_route=expected_route
+            )
+
+            # Generate and store opening message
+            opening_message = self._generate_opening(context)
+            context.add_turn(TurnRole.AGENT, opening_message)
+
+            logger.info(f"Created context for call {internal_call_id} from retell_call_id lookup")
+            logger.info(f"Context created successfully for {internal_call_id}")
+
+            return internal_call_id
+
+        except Exception as e:
+            logger.error(f"Error creating context from retell_id: {e}")
+            logger.error(f"Error creating context from retell_call_id: {e}", exc_info=True)
+            return None
 
     async def _handle_response_required(self, message: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -213,7 +332,9 @@ class RetellWebSocketHandler:
         # We need to match based on active contexts
         # For now, use the first (and likely only) active context
         active_contexts = self.context_manager.get_all_active_contexts()
+        logger.debug(f"Active contexts: {active_contexts}")
         if not active_contexts:
+            logger.error("No active contexts found for response_required message")
             logger.error("No active contexts found")
             return self._error_response(response_id)
 
@@ -289,6 +410,8 @@ class RetellWebSocketHandler:
             call_id: Internal call ID
         """
         try:
+            logger.info(f"Saving call data for call_id: {call_id}")
+
             # Import dependencies at the top
             from app.database import get_supabase
             from app.services.call_service import CallService
@@ -300,6 +423,8 @@ class RetellWebSocketHandler:
             if not context:
                 logger.warning(f"No context found for call {call_id}, cannot save data")
                 return
+
+            logger.info(f"Context found with {len(context.conversation_history)} turns")
 
             # Build transcript from conversation history
             transcript_lines = []
@@ -390,7 +515,7 @@ async def retell_llm_websocket_with_call_id(websocket: WebSocket, call_id: str):
 
     Args:
         websocket: FastAPI WebSocket connection
-        call_id: Call ID from URL path (informational only)
+        call_id: Retell call ID from URL path - used to look up our internal call
     """
     logger.info(f"WebSocket connection attempt with call_id in path: {call_id}")
-    await _ws_handler.handle_connection(websocket)
+    await _ws_handler.handle_connection(websocket, retell_call_id=call_id)

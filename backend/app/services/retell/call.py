@@ -21,6 +21,7 @@ class RetellCallService:
         driver_phone: str,
         driver_name: str,
         load_number: str,
+        scenario: str = "check_in",
         from_number: Optional[str] = None,
         additional_metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
@@ -57,11 +58,15 @@ class RetellCallService:
                 metadata.update(additional_metadata)
             
             # Prepare dynamic variables for LLM prompt customization
+            # These are passed to the WebSocket handler via Retell
             dynamic_variables = {
+                "call_id": call_id,
                 "driver_name": driver_name,
                 "load_number": load_number,
+                "scenario": scenario,
+                "phone_number": driver_phone,
             }
-            
+
             # Create phone call using SDK
             response = self.client.create_phone_call(
                 from_number=from_number,
@@ -114,6 +119,7 @@ class RetellCallService:
         retell_agent_id: str,
         driver_name: str,
         load_number: str,
+        scenario: str = "check_in",
         additional_metadata: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
@@ -140,22 +146,28 @@ class RetellCallService:
                 metadata.update(additional_metadata)
             
             # Dynamic variables for LLM
+            # These are passed to the WebSocket handler via Retell
             dynamic_variables = {
+                "call_id": call_id,
                 "driver_name": driver_name,
                 "load_number": load_number,
+                "scenario": scenario,
             }
-            
+
             # Create web call using SDK
             response = self.client.create_web_call(
                 agent_id=retell_agent_id,
                 metadata=metadata,
                 retell_llm_dynamic_variables=dynamic_variables
             )
-            
-            # Update database
+
+            logger.info(f"Retell web call created: {response.call_id}, updating database...")
+            logger.info(f"Web call created: {response.call_id}, updating database for call_id: {call_id}")
+
+            # Update database BEFORE returning - this is critical for WebSocket lookup
             supabase = get_supabase()
             call_service = CallService(supabase)
-            await call_service.update_call(
+            update_result = await call_service.update_call(
                 call_id=call_id,
                 call_update=CallUpdate(
                     retell_call_id=response.call_id,
@@ -163,14 +175,20 @@ class RetellCallService:
                     started_at=datetime.now()
                 )
             )
-            
-            logger.info(f"Created web call {call_id} -> Retell {response.call_id}")
-            
+
+            if update_result:
+                logger.info(f"Database updated successfully for call {call_id} with retell_call_id {response.call_id}")
+                logger.info(f"Database updated: retell_call_id={response.call_id} saved for call_id={call_id}")
+            else:
+                logger.error(f"Failed to update database for call {call_id}")
+                logger.warning(f"Database update returned None for call_id={call_id}")
+
             return {
                 "call_id": call_id,
                 "retell_call_id": response.call_id,
                 "access_token": response.access_token,
-                "agent_id": retell_agent_id
+                "agent_id": retell_agent_id,
+                "sample_rate": getattr(response, 'sample_rate', 24000)
             }
             
         except Exception as e:

@@ -28,6 +28,37 @@ EMERGENCY_KEYWORDS = [
     "hospital", "ambulance", "collision", "wreck"
 ]
 
+# Sample route data for location conflict detection (mock data for demo)
+# In production, this would come from a TMS/routing system
+MOCK_ROUTE_DATA = {
+    # Barstow to Phoenix route
+    "7891-B": {
+        "origin": "Barstow, CA",
+        "destination": "Phoenix, AZ",
+        "expected_corridor": ["Barstow", "Needles", "Kingman", "Phoenix", "I-40", "I-10", "California", "Arizona"],
+        "off_route_indicators": ["San Diego", "Los Angeles", "Las Vegas", "Salt Lake", "Denver", "Texas", "New Mexico"]
+    },
+    # Default route pattern
+    "default": {
+        "origin": "Origin",
+        "destination": "Destination",
+        "expected_corridor": [],
+        "off_route_indicators": []
+    }
+}
+
+
+def get_route_for_load(load_number: str) -> Dict[str, Any]:
+    """Get expected route data for a load number"""
+    # Check for exact match first
+    if load_number in MOCK_ROUTE_DATA:
+        return MOCK_ROUTE_DATA[load_number]
+    # Check for partial match (e.g., "7891-B" matches load containing "7891")
+    for key in MOCK_ROUTE_DATA:
+        if key != "default" and key in load_number:
+            return MOCK_ROUTE_DATA[key]
+    return MOCK_ROUTE_DATA["default"]
+
 
 class RealtimeLLMHandler:
     """
@@ -56,6 +87,46 @@ class RealtimeLLMHandler:
         """
         text_lower = text.lower()
         return any(keyword in text_lower for keyword in EMERGENCY_KEYWORDS)
+
+    def detect_location_conflict(self, stated_location: str, expected_route: Dict[str, Any]) -> bool:
+        """
+        Detect if the driver's stated location conflicts with expected route
+
+        Uses simple keyword matching against expected corridor and off-route indicators.
+        In production, this would use geo-fencing or actual coordinates.
+
+        Args:
+            stated_location: Location the driver claimed
+            expected_route: Route data with expected_corridor and off_route_indicators
+
+        Returns:
+            True if location appears to conflict with expected route
+        """
+        if not stated_location or not expected_route:
+            return False
+
+        stated_lower = stated_location.lower()
+        expected_corridor = expected_route.get("expected_corridor", [])
+        off_route_indicators = expected_route.get("off_route_indicators", [])
+
+        # Check if any off-route indicator is mentioned
+        for indicator in off_route_indicators:
+            if indicator.lower() in stated_lower:
+                logger.info(f"Location conflict detected: '{stated_location}' contains off-route indicator '{indicator}'")
+                return True
+
+        # If we have expected corridor data, check if location is on route
+        if expected_corridor:
+            on_route = any(waypoint.lower() in stated_lower for waypoint in expected_corridor)
+            if not on_route:
+                # Only flag as conflict if we're confident they're off-route
+                # (i.e., they mentioned a specific location that's not on the route)
+                has_specific_location = any(word in stated_lower for word in ["near", "at", "in", "on", "exit", "mile"])
+                if has_specific_location:
+                    logger.info(f"Location conflict: '{stated_location}' not on expected route {expected_corridor}")
+                    return True
+
+        return False
 
     async def generate_response(
         self,
@@ -116,7 +187,7 @@ class RealtimeLLMHandler:
         confidence: Optional[float]
     ) -> Optional[str]:
         """
-        Handle edge cases (uncooperative driver, noisy environment, etc.)
+        Handle edge cases (uncooperative driver, noisy environment, conflicting location, etc.)
 
         Returns:
             Response text if edge case handled, None otherwise
@@ -143,7 +214,32 @@ class RealtimeLLMHandler:
             logger.info(f"Call {context.call_id}: Requesting clarification (attempt {context.clarification_attempts})")
             return "I didn't quite catch that. Could you repeat that for me?"
 
+        # Check for location conflict (only once per call, non-confrontational)
+        if context.should_check_location_conflict():
+            stated_location = context.extracted_data.get("current_location")
+            if stated_location:
+                conflict = self.detect_location_conflict(stated_location, context.expected_route)
+                context.mark_location_conflict_checked(conflict)
+                if conflict:
+                    logger.info(f"Call {context.call_id}: Location conflict detected, asking for verification")
+                    expected_area = context.expected_route.get("destination", "the expected area")
+                    return self._generate_location_verification_response(context, expected_area)
+
         return None
+
+    def _generate_location_verification_response(self, context: ConversationContext, expected_area: str) -> str:
+        """
+        Generate a non-confrontational response to verify the driver's location
+
+        Per requirements: handle discrepancies in a non-confrontational way
+        """
+        origin = context.expected_route.get("origin", "")
+        destination = context.expected_route.get("destination", "")
+
+        if origin and destination:
+            return f"Just to make sure I have this right - you're on the route from {origin} to {destination}, correct? The system shows a slightly different area."
+        else:
+            return "Just double-checking the location - the system is showing you might be in a different area. Does that sound about right?"
 
     def _generate_probing_response(self, context: ConversationContext) -> str:
         """Generate response to probe for more detail from uncooperative driver"""

@@ -42,13 +42,18 @@ class ConversationContext:
         scenario: str,
         driver_name: str,
         load_number: str,
-        phone_number: str
+        phone_number: str,
+        expected_route: Optional[Dict[str, Any]] = None
     ):
         self.call_id = call_id
         self.scenario = scenario  # check_in, emergency, delivery, custom
         self.driver_name = driver_name
         self.load_number = load_number
         self.phone_number = phone_number
+
+        # Expected route for location conflict detection
+        # Format: {"origin": "Barstow, CA", "destination": "Phoenix, AZ", "waypoints": ["Needles, CA", "Kingman, AZ"]}
+        self.expected_route = expected_route or {}
 
         # Conversation tracking
         self.conversation_history: List[ConversationTurn] = []
@@ -67,6 +72,10 @@ class ConversationContext:
         self.one_word_response_count = 0
         self.low_confidence_count = 0
         self.clarification_attempts = 0
+
+        # Location conflict tracking
+        self.location_conflict_checked = False
+        self.location_conflict_detected = False
 
         # Call control
         self.should_end_call = False
@@ -164,6 +173,21 @@ class ConversationContext:
         self.should_end_call = True
         self.end_call_reason = reason
 
+    def should_check_location_conflict(self) -> bool:
+        """Check if we should verify the driver's stated location against expected route"""
+        # Only check once per call, and only if we have route data and a stated location
+        if self.location_conflict_checked:
+            return False
+        if not self.expected_route:
+            return False
+        stated_location = self.extracted_data.get("current_location")
+        return stated_location is not None
+
+    def mark_location_conflict_checked(self, conflict_detected: bool = False):
+        """Mark that we've checked for location conflict"""
+        self.location_conflict_checked = True
+        self.location_conflict_detected = conflict_detected
+
     def get_conversation_for_llm(self, max_turns: int = 10) -> List[Dict[str, str]]:
         """
         Get recent conversation history formatted for LLM
@@ -214,7 +238,8 @@ class ContextManager:
         scenario: str,
         driver_name: str,
         load_number: str,
-        phone_number: str
+        phone_number: str,
+        expected_route: Optional[Dict[str, Any]] = None
     ) -> ConversationContext:
         """Create new conversation context"""
         context = ConversationContext(
@@ -222,7 +247,8 @@ class ContextManager:
             scenario=scenario,
             driver_name=driver_name,
             load_number=load_number,
-            phone_number=phone_number
+            phone_number=phone_number,
+            expected_route=expected_route
         )
         self._contexts[call_id] = context
         return context

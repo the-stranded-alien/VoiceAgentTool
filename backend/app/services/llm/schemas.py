@@ -11,11 +11,13 @@ CHECK_IN_SCHEMA = {
     "call_outcome": {
         "type": "string",
         "enum": ["In-Transit Update", "Arrival Confirmation"],
+        "nullable": True,
         "description": "Whether driver is in-transit or has arrived"
     },
     "driver_status": {
         "type": "string",
         "enum": ["Driving", "Delayed", "Arrived", "Unloading"],
+        "nullable": True,
         "description": "Current status of the driver"
     },
     "current_location": {
@@ -41,6 +43,7 @@ CHECK_IN_SCHEMA = {
     },
     "pod_reminder_acknowledged": {
         "type": "boolean",
+        "nullable": True,
         "description": "Whether driver acknowledged POD reminder"
     }
 }

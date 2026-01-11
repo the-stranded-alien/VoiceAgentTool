@@ -16,9 +16,39 @@ export const CallStatus = {
 // CallStatus type derived from the const object
 export type CallStatus = typeof CallStatus[keyof typeof CallStatus];
 
-export interface StructuredData {
-  [key: string]: any;
+// Check-in scenario structured data
+export interface CheckInStructuredData {
+  call_outcome?: 'In-Transit Update' | 'Arrival Confirmation';
+  driver_status?: 'Driving' | 'Delayed' | 'Arrived' | 'Unloading';
+  current_location?: string | null;
+  eta?: string | null;
+  delay_reason?: 'Heavy Traffic' | 'Weather' | 'Mechanical' | 'None' | 'Other' | null;
+  unloading_status?: string | null;
+  pod_reminder_acknowledged?: boolean;
 }
+
+// Emergency scenario structured data
+export interface EmergencyStructuredData {
+  call_outcome?: 'Emergency Escalation';
+  emergency_type?: 'Accident' | 'Breakdown' | 'Medical' | 'Other';
+  safety_status?: string;
+  injury_status?: string;
+  emergency_location?: string;
+  load_secure?: boolean;
+  escalation_status?: 'Connected to Human Dispatcher';
+}
+
+// Delivery scenario structured data
+export interface DeliveryStructuredData {
+  call_outcome?: 'Delivery Confirmed' | 'Delivery Issues';
+  delivery_time?: string | null;
+  pod_received?: boolean;
+  pod_number?: string | null;
+  delivery_issues?: string | null;
+}
+
+// Union type for all structured data
+export type StructuredData = CheckInStructuredData | EmergencyStructuredData | DeliveryStructuredData | Record<string, any>;
 
 export interface VoiceSettings {
   voice_id?: string;
@@ -65,10 +95,13 @@ export interface Call {
   agent_config_id?: string;
   agent_config?: AgentConfig;
   call_id?: string;
+  retell_call_id?: string;
+  retell_agent_id?: string;
   access_token?: string;
   start_time?: string;
   end_time?: string;
   duration?: number;
+  call_duration_seconds?: number;
   transcript?: string;
   structured_data?: StructuredData;
   recording_url?: string;
