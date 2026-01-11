@@ -109,7 +109,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, onClose }) => {
                 <p className="text-xs text-purple-200 mb-2">
                   Check our documentation
                 </p>
-                <button className="text-xs font-medium text-purple-200 hover:text-white transition-colors">
+                <button
+                  onClick={() =>
+                    window.open(
+                      'https://github.com/the-stranded-alien/VoiceAgentTool?tab=readme-ov-file#voice-agent-tool',
+                      '_blank',
+                      'noopener,noreferrer'
+                    )
+                  }
+                  className="text-xs font-medium text-purple-200 hover:text-white transition-colors"
+                >
                   Learn More →
                 </button>
               </div>
