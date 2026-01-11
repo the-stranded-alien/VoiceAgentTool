@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, model_validator, computed_field
 from typing import Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
@@ -61,6 +61,16 @@ class CallResponse(BaseModel):
     created_at: datetime
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+
+    @computed_field
+    def phone_number(self) -> str:
+        """Alias for driver_phone for frontend compatibility"""
+        return self.driver_phone
+    
+    @computed_field
+    def duration(self) -> Optional[int]:
+        """Alias for call_duration_seconds for frontend compatibility"""
+        return self.call_duration_seconds
 
     class Config:
         from_attributes = True

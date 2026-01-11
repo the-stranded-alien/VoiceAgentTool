@@ -465,7 +465,9 @@ class RetellWebSocketHandler:
         """
         Handle reminder_required message (when user is silent too long)
 
-        This can be used to prompt the user if they haven't spoken in a while
+        This can be used to prompt the user if they haven't spoken in a while.
+        However, if the conversation is already complete (all required data gathered),
+        we should end the call instead of asking "are you still there?"
         """
         response_id = message.get("response_id", 0)
 
@@ -480,7 +482,24 @@ class RetellWebSocketHandler:
         if not context:
             return self._error_response(response_id)
 
-        # Generate a gentle prompt
+        # Check if conversation should end (all required data gathered)
+        should_end = self.realtime_handler._should_end_conversation(context)
+        
+        if should_end:
+            # Conversation is complete, end the call with a final message
+            context.mark_for_end("conversation_complete")
+            final_response = self.realtime_handler.generate_final_response(context)
+            context.add_turn(TurnRole.AGENT, final_response)
+            
+            return {
+                "response_type": "response",
+                "response_id": response_id,
+                "content": final_response,
+                "content_complete": True,
+                "end_call": True
+            }
+
+        # Conversation is not complete, ask if they're still there
         if context.is_emergency:
             reminder = "Are you still there? Can you hear me?"
         else:

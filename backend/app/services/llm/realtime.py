@@ -538,7 +538,15 @@ class RealtimeLLMHandler:
                     return True
 
             elif driver_status in ["Arrived", "Unloading"]:
-                # For arrived: need unloading status and POD reminder
+                # For arrived: need POD reminder acknowledged
+                # If POD is acknowledged and we have driver_status, consider it complete
+                # (current_location and unloading_status are nice-to-have but not always necessary)
+                has_pod_acknowledged = context.extracted_data.get("pod_reminder_acknowledged") is True
+                if has_pod_acknowledged and context.turn_count >= 6:
+                    # If we have POD acknowledged and enough conversation, end the call
+                    return True
+                
+                # Also check if we have all required fields (strict check)
                 required = ["driver_status", "current_location", "unloading_status", "pod_reminder_acknowledged"]
                 if context.is_complete(required):
                     return True
